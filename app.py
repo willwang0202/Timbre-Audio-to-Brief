@@ -149,40 +149,42 @@ def build_player_html(title, video_id, lang="zh"):
 CARD_STYLE = """
 <style>
     .song-card {
-        background: #1e1e2e;
+        background: #f8f9fa;
         border-radius: 12px;
         padding: 16px;
         margin: 12px 0;
-        border: 1px solid #333;
+        border: 1px solid #dee2e6;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     .song-card h3 {
-        color: #f0f0f0;
+        color: #212529;
         margin: 0 0 8px 0;
         font-size: 18px;
     }
     .song-card .score {
-        color: #888;
+        color: #6c757d;
         font-size: 13px;
     }
     .spec-section {
-        background: #1a1a2e;
+        background: #fff8e1;
         border-radius: 12px;
         padding: 20px;
         margin: 16px 0;
-        border: 1px solid #444;
+        border: 1px solid #ffe082;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
     .spec-section h2 {
-        color: #ffd700;
+        color: #e65100;
         margin: 0 0 16px 0;
     }
     .spec-line {
-        color: #e0e0e0;
+        color: #333;
         font-size: 15px;
         line-height: 1.8;
         margin: 4px 0;
     }
     .suggestion-item {
-        color: #ccc;
+        color: #555;
         font-size: 14px;
         line-height: 1.6;
         margin: 2px 0;
@@ -194,8 +196,15 @@ CARD_STYLE = """
         margin-top: 16px;
         text-align: center;
     }
+    .feat-detail {
+        color: #666;
+        font-size: 13px;
+        margin-top: 8px;
+        line-height: 1.6;
+    }
 </style>
 """
+
 
 
 # ── 業主版 ──────────────────────────────────────────────────
@@ -207,7 +216,7 @@ def recommend_for_client(mood, lang):
     results = recommend(mood, top_k=3, return_results=True)
 
     html = CARD_STYLE
-    html += f"<h2 style='color:#f0f0f0;'>{t('client_header', lang)}</h2>"
+    html += f"<h2 style='color:#212529;'>{t('client_header', lang)}</h2>"
 
     for i, (idx, score) in enumerate(results):
         title = song_library.iloc[idx]['title']
@@ -319,7 +328,7 @@ def recommend_for_musician(mood, lang):
     results = recommend(mood, top_k=3, return_results=True)
 
     html = CARD_STYLE
-    html += f"<h2 style='color:#f0f0f0;'>{t('musician_header', lang)}</h2>"
+    html += f"<h2 style='color:#212529;'>{t('musician_header', lang)}</h2>"
     feature_rows = []
 
     for i, (idx, score) in enumerate(results):
@@ -337,7 +346,7 @@ def recommend_for_musician(mood, lang):
             row = feature_row.iloc[0]
             feature_rows.append(row)
             html += f'''
-            <div style="color:#aaa; font-size:13px; margin-top:8px; line-height:1.6;">
+            <div class="feat-detail">
                 BPM：{row['bpm']:.0f} &nbsp;│&nbsp;
                 Valence：{row['valence']:.2f} &nbsp;│&nbsp;
                 Arousal：{row['arousal']:.2f}<br>
