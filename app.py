@@ -10,10 +10,10 @@ def get_youtube_search_url(title):
 def recommend_for_client(mood):
     """業主版：簡單、直覺、可以試聽"""
     if not mood.strip():
-        return "請輸入情緒描述"
+        return "請輸入情緒描述 / Please enter a mood description"
     
     results = recommend(mood, top_k=3, return_results=True)
-    output = "🎵 根據你的描述，推薦以下參考音樂：\n\n"
+    output = "🎵 根據你的描述，推薦以下參考音樂：\n   Based on your description, here are the recommended reference tracks:\n\n"
     
     for i, (idx, score) in enumerate(results):
         title = song_library.iloc[idx]['title']
@@ -21,7 +21,7 @@ def recommend_for_client(mood):
         output += f"{i+1}. {title}\n"
         output += f"   🔗 {youtube_url}\n\n"
     
-    output += "\n✅ 確認後，系統將把你的需求轉換為樂手可執行的聲學規格書"
+    output += "\n✅ 確認後，系統將把你的需求轉換為樂手可執行的聲學規格書\n   Once confirmed, the system will convert your needs into an executable acoustic spec brief for musicians."
     return output
 
 def generate_acoustic_brief(avg):
@@ -38,31 +38,31 @@ def generate_acoustic_brief(avg):
         tempo_desc = "快板 (Fast)"
     else:
         tempo_desc = "極快 (Very Fast)"
-    brief_lines.append(f"🎯 建議速度：{bpm:.0f} BPM 左右（{tempo_desc}）")
+    brief_lines.append(f"🎯 建議速度 Suggested Tempo：~{bpm:.0f} BPM（{tempo_desc}）")
 
     # ── 能量 / 情感強度 ──
     arousal = avg['arousal']
     if arousal < 3.5:
-        energy_desc = "低能量、柔和"
+        energy_desc = "低能量、柔和 Low Energy / Soft"
     elif arousal < 5.5:
-        energy_desc = "中等能量"
+        energy_desc = "中等能量 Medium Energy"
     elif arousal < 7:
-        energy_desc = "高能量、有張力"
+        energy_desc = "高能量、有張力 High Energy / Tense"
     else:
-        energy_desc = "極高能量、爆發力"
-    brief_lines.append(f"⚡ 能量強度：{energy_desc}（arousal {arousal:.1f}/9）")
+        energy_desc = "極高能量、爆發力 Explosive Energy"
+    brief_lines.append(f"⚡ 能量強度 Energy Level：{energy_desc}（arousal {arousal:.1f}/9）")
 
     # ── 情緒色彩 ──
     valence = avg['valence']
     if valence < 3:
-        valence_desc = "偏暗、負面"
+        valence_desc = "偏暗、負面 Dark / Negative"
     elif valence < 5:
-        valence_desc = "中性偏沉"
+        valence_desc = "中性偏沉 Neutral-Dark"
     elif valence < 7:
-        valence_desc = "正面、明亮"
+        valence_desc = "正面、明亮 Positive / Bright"
     else:
-        valence_desc = "非常正面、開朗"
-    brief_lines.append(f"🌈 情緒色彩：{valence_desc}（valence {valence:.1f}/9）")
+        valence_desc = "非常正面、開朗 Very Positive / Cheerful"
+    brief_lines.append(f"🌈 情緒色彩 Emotional Tone：{valence_desc}（valence {valence:.1f}/9）")
 
     # ── 主要風格 tag ──
     mood_tags = []
@@ -80,28 +80,28 @@ def generate_acoustic_brief(avg):
         mood_tags.append("律動感 Groovy")
     if not mood_tags:
         mood_tags.append("中性 Neutral")
-    brief_lines.append(f"🏷️ 風格標籤：{' / '.join(mood_tags)}")
+    brief_lines.append(f"🏷️ 風格標籤 Style Tags：{' / '.join(mood_tags)}")
 
     # ── 製作建議 ──
     suggestions = []
     if avg['danceability'] > 0.6:
-        suggestions.append("強調節奏律動，可加入明顯的鼓組 groove")
+        suggestions.append("強調節奏律動，可加入明顯的鼓組 groove / Emphasize rhythmic groove with prominent drum patterns")
     if avg['mood_relaxed'] > 0.5 and arousal < 4:
-        suggestions.append("以柔和音色為主，可使用 pad、木吉他、鋼琴")
+        suggestions.append("以柔和音色為主，可使用 pad、木吉他、鋼琴 / Use soft timbres: pads, acoustic guitar, piano")
     if avg['mood_aggressive'] > 0.3 and arousal > 5:
-        suggestions.append("可加入失真吉他或強力鼓點增加衝擊感")
+        suggestions.append("可加入失真吉他或強力鼓點增加衝擊感 / Add distorted guitars or powerful drum hits for impact")
     if avg['mood_sad'] > 0.4 and valence < 4:
-        suggestions.append("選擇小調和聲，營造感傷氛圍")
+        suggestions.append("選擇小調和聲，營造感傷氛圍 / Use minor key harmony to create a melancholic atmosphere")
     if avg['mood_happy'] > 0.5 and valence > 5:
-        suggestions.append("選擇大調和聲，保持明亮的旋律線")
+        suggestions.append("選擇大調和聲，保持明亮的旋律線 / Use major key harmony with bright melodic lines")
     if avg['mood_party'] > 0.4 and avg['danceability'] > 0.5:
-        suggestions.append("可加入合成器、電子鼓點，營造派對氛圍")
+        suggestions.append("可加入合成器、電子鼓點，營造派對氛圍 / Add synths and electronic drums for a party vibe")
     if arousal < 3:
-        suggestions.append("注意留白與空間感，不要過度編曲")
+        suggestions.append("注意留白與空間感，不要過度編曲 / Leave space and air in the arrangement, avoid over-producing")
     if not suggestions:
-        suggestions.append("依照業主情緒描述自由發揮")
+        suggestions.append("依照業主情緒描述自由發揮 / Follow the client's mood description freely")
 
-    brief_lines.append("\n💡 製作建議：")
+    brief_lines.append("\n💡 製作建議 Production Suggestions：")
     for s in suggestions:
         brief_lines.append(f"   • {s}")
 
@@ -111,12 +111,12 @@ def generate_acoustic_brief(avg):
 def recommend_for_musician(mood):
     """音樂人版：顯示聲學參數 + 自動生成聲學規格建議"""
     if not mood.strip():
-        return "請輸入情緒描述"
+        return "請輸入情緒描述 / Please enter a mood description"
 
     results = recommend(mood, top_k=3, return_results=True)
 
     # ── 每首歌的聲學數據 ──
-    output = "🎸 業主需求分析：\n\n"
+    output = "🎸 業主需求分析 Client Needs Analysis：\n\n"
     feature_rows = []
 
     for i, (idx, score) in enumerate(results):
@@ -124,7 +124,7 @@ def recommend_for_musician(mood):
         feature_row = song_features[song_features['title'] == title]
 
         output += f"{i+1}. {title}\n"
-        output += f"   相似度：{score:.3f}\n"
+        output += f"   相似度 Similarity：{score:.3f}\n"
 
         if not feature_row.empty:
             row = feature_row.iloc[0]
@@ -150,7 +150,8 @@ def recommend_for_musician(mood):
         ].mean()
 
         output += "━" * 40 + "\n"
-        output += "📋 聲學規格建議書（根據以上參考曲目自動生成）\n\n"
+        output += "📋 聲學規格建議書 Acoustic Specification Brief\n"
+        output += "   （根據以上參考曲目自動生成 Auto-generated from reference tracks above）\n\n"
         output += generate_acoustic_brief(avg)
         output += "\n"
 
@@ -159,20 +160,20 @@ def recommend_for_musician(mood):
 # 建立雙介面
 with gr.Blocks(title="Timbre Audio-to-Brief Engine") as demo:
     gr.Markdown("# 🎵 Timbre Audio-to-Brief Engine")
-    gr.Markdown("輸入情緒描述，AI 幫你找到最匹配的參考音樂")
+    gr.Markdown("輸入情緒描述，AI 幫你找到最匹配的參考音樂\n\nDescribe a mood or scene, and AI will find the best-matching reference music for you.")
     
     with gr.Row():
         mood_input = gr.Textbox(
-            placeholder="描述你的情緒或場景，例如：深夜開車，有點孤獨...",
-            label="情緒描述",
+            placeholder="描述你的情緒或場景 / Describe the mood or scene, e.g.: late night drive, feeling lonely...",
+            label="情緒描述 Mood Description",
             lines=2
         )
     
     with gr.Row():
-        client_btn = gr.Button("🎬 我是業主（找參考音樂）", variant="primary")
-        musician_btn = gr.Button("🎸 我是音樂人（看聲學規格）", variant="secondary")
+        client_btn = gr.Button("🎬 Client — Find Reference Music", variant="primary")
+        musician_btn = gr.Button("🎸 Musician — Acoustic Spec Brief", variant="secondary")
     
-    output_box = gr.Textbox(label="推薦結果", lines=15)
+    output_box = gr.Textbox(label="推薦結果 Results", lines=15)
     
     client_btn.click(fn=recommend_for_client, inputs=mood_input, outputs=output_box)
     musician_btn.click(fn=recommend_for_musician, inputs=mood_input, outputs=output_box)
