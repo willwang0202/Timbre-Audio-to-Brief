@@ -285,7 +285,7 @@ def recommend_for_client(mood, lang):
         local_path = get_local_audio_path(filename)
         
         if local_path:
-            player = f'<div style="margin: 8px 0;"><audio controls src="file={local_path}" style="width:100%"></audio></div>'
+            player = f'<div style="margin: 8px 0;"><audio controls src="/file={local_path}" style="width:100%"></audio></div>'
         else:
             video_id = get_youtube_video_id(title)
             player = build_player_html(title, video_id, lang)
@@ -403,7 +403,7 @@ def recommend_for_musician(mood, lang):
         
         local_path = get_local_audio_path(filename)
         if local_path:
-            player = f'<div style="margin: 8px 0;"><audio controls src="file={local_path}" style="width:100%"></audio></div>'
+            player = f'<div style="margin: 8px 0;"><audio controls src="/file={local_path}" style="width:100%"></audio></div>'
         else:
             video_id = get_youtube_video_id(title)
             player = build_player_html(title, video_id, lang)
