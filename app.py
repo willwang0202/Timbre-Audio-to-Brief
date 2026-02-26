@@ -117,13 +117,43 @@ from ytmusicapi import YTMusic
 ytmusic = YTMusic()
 
 def get_youtube_video_id(query):
-    """使用 ytmusicapi 搜尋 YouTube 音樂，回傳第一個結果的 video ID"""
+    """取得 YouTube Video ID，使用三重 Fallback 機制確保能在 HF Spaces 成功"""
+    # 1. ytmusicapi
     try:
         results = ytmusic.search(query, filter="songs")
         if results and len(results) > 0 and 'videoId' in results[0]:
             return results[0]['videoId']
     except Exception as e:
-        print(f"  ⚠️ ytmusicapi search failed for '{query}': {e}")
+        print(f"  [Fallback 1 Failed] ytmusicapi: {e}")
+
+    # 2. DuckDuckGo Search (穩定的網頁抓取)
+    try:
+        encoded = urllib.parse.quote('site:youtube.com/watch ' + query)
+        req = urllib.request.Request(
+            f'https://html.duckduckgo.com/html/?q={encoded}', 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        )
+        html = urllib.request.urlopen(req, timeout=5).read().decode('utf-8')
+        match = re.search(r'v=([a-zA-Z0-9_-]{11})', html)
+        if match:
+            return match.group(1)
+    except Exception as e:
+        print(f"  [Fallback 2 Failed] DuckDuckGo: {e}")
+
+    # 3. YouTube Search HTML
+    try:
+        encoded = urllib.parse.quote(query)
+        req = urllib.request.Request(
+            f"https://www.youtube.com/results?search_query={encoded}", 
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        )
+        html = urllib.request.urlopen(req, timeout=5).read().decode("utf-8")
+        match = re.search(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)
+        if match:
+            return match.group(1)
+    except Exception as e:
+        print(f"  [Fallback 3 Failed] YouTube HTML: {e}")
+
     return None
 
 
