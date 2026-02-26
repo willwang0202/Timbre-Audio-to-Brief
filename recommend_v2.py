@@ -197,14 +197,56 @@ def blend_profiles(matched_moods):
 
 
 def translate_to_english(text):
+    """中文→英文翻譯，帶有 fallback 機制"""
     if not text or not text.strip():
         return text
     ascii_ratio = sum(c.isascii() for c in text) / max(len(text), 1)
     if ascii_ratio > 0.8:
         return text
-    translated = argostranslate.translate.translate(text, "zh", "en")
-    print(f"  [翻譯] {text} → {translated}")
-    return translated
+
+    # 先嘗試 argostranslate
+    try:
+        translated = argostranslate.translate.translate(text, "zh", "en")
+        if translated and translated.strip():
+            print(f"  [翻譯] {text} → {translated}")
+            return translated
+    except Exception as e:
+        print(f"  [翻譯失敗] argostranslate error: {e}")
+
+    # Fallback: 用關鍵字映射表做基本轉換
+    FALLBACK_MAP = {
+        "開心": "happy", "快樂": "happy", "高興": "happy", "愉快": "happy",
+        "傷心": "sad", "悲傷": "sad", "難過": "sad", "哭": "cry",
+        "心碎": "heartbreak", "痛苦": "depressed",
+        "平靜": "calm", "安靜": "quiet", "寧靜": "peaceful", "溫柔": "gentle",
+        "放鬆": "chill", "慵懶": "chill", "舒服": "cozy",
+        "熱血": "energetic", "衝刺": "energetic", "運動": "workout",
+        "激動": "intense", "燃燒": "intense",
+        "愛情": "love", "浪漫": "romantic", "甜蜜": "sweet",
+        "約會": "date", "心動": "butterflies", "告白": "love",
+        "派對": "party", "跳舞": "dance", "慶祝": "celebrate", "夜店": "club",
+        "生氣": "angry", "憤怒": "angry", "暴躁": "rage", "不爽": "pissed",
+        "專注": "focus", "讀書": "study", "工作": "work", "專心": "concentrate",
+        "趕報告": "productive", "考試": "study",
+        "史詩": "epic", "壯觀": "grand", "英雄": "heroic", "戰鬥": "battle",
+        "懷念": "nostalgic", "回憶": "memory", "想念": "miss",
+        "開車": "drive", "兜風": "driving", "公路": "highway",
+        "孤獨": "lonely", "寂寞": "alone", "空虛": "empty", "一個人": "alone",
+        "好玩": "fun", "有趣": "playful", "活潑": "lively", "興奮": "exciting",
+        "深夜": "late night", "夜晚": "night", "早晨": "morning",
+        "陽光": "sunny", "分手": "breakup", "想念": "miss",
+    }
+    fallback_parts = []
+    for zh, en in FALLBACK_MAP.items():
+        if zh in text:
+            fallback_parts.append(en)
+    if fallback_parts:
+        result = " ".join(fallback_parts)
+        print(f"  [翻譯 fallback] {text} → {result}")
+        return result
+
+    print(f"  [翻譯] 無法翻譯，使用原文: {text}")
+    return text
 
 
 def cosine_sim(a, b):
