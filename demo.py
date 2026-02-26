@@ -281,7 +281,7 @@ def recommend_for_client(mood, lang):
 
     for i, (idx, score) in enumerate(results):
         title = song_data.iloc[idx]['title']
-        filename = song_data.iloc[idx]['filename']
+        filename = song_data.iloc[idx].get('filename_x', song_data.iloc[idx].get('filename'))
         local_path = get_local_audio_path(filename)
         
         if local_path:
@@ -398,7 +398,7 @@ def recommend_for_musician(mood, lang):
 
     for i, (idx, score) in enumerate(results):
         title = song_data.iloc[idx]['title']
-        filename = song_data.iloc[idx]['filename']
+        filename = song_data.iloc[idx].get('filename_x', song_data.iloc[idx].get('filename'))
         feature_row = song_data[song_data['title'] == title]
         
         local_path = get_local_audio_path(filename)
