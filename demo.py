@@ -3,6 +3,7 @@ import urllib.parse
 import urllib.request
 import re
 import os
+import ssl
 import pandas as pd
 from recommend_v2 import recommend, song_data
 
@@ -126,6 +127,11 @@ ytmusic = YTMusic()
 
 def get_youtube_video_id(query):
     """取得 YouTube Video ID，使用三重 Fallback 機制確保能在 HF Spaces 成功"""
+    # 建立繞過 SSL 憑證驗證的 Context (以防 Mac 本地環境缺 CA bundle)
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
     # 1. ytmusicapi
     try:
         results = ytmusic.search(query, filter="songs")
@@ -141,7 +147,7 @@ def get_youtube_video_id(query):
             f'https://html.duckduckgo.com/html/?q={encoded}', 
             headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         )
-        html = urllib.request.urlopen(req, timeout=5).read().decode('utf-8')
+        html = urllib.request.urlopen(req, context=ctx, timeout=5).read().decode('utf-8')
         match = re.search(r'v=([a-zA-Z0-9_-]{11})', html)
         if match:
             return match.group(1)
@@ -155,7 +161,7 @@ def get_youtube_video_id(query):
             f"https://www.youtube.com/results?search_query={encoded}", 
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         )
-        html = urllib.request.urlopen(req, timeout=5).read().decode("utf-8")
+        html = urllib.request.urlopen(req, context=ctx, timeout=5).read().decode("utf-8")
         match = re.search(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)
         if match:
             return match.group(1)
