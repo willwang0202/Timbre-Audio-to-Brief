@@ -1,20 +1,29 @@
 """
-Timbre 推薦引擎 v3（Essentia 版）
-完全不依賴 CLAP 或 Spotify API
+Timbre 推薦引擎 v4（Semantic Matching 版）
+使用 sentence-transformers 做語意比對，取代關鍵字匹配
 
 策略：
-1. 用戶輸入情緒描述
-2. 偵測所有匹配的關鍵字 → 混合多個目標特徵向量
-3. 計算每首歌與目標的 cosine similarity
-4. 排序推薦
+1. 用戶輸入情緒描述（中英文皆可）
+2. 用 sentence-transformer 計算與每個 mood profile 的語意相似度
+3. 取相似度超過閾值的 mood → 加權混合目標特徵向量
+4. 計算每首歌與目標的 euclidean similarity
+5. 排序推薦
 """
 import numpy as np
 import pandas as pd
-import argostranslate.translate
+from sentence_transformers import SentenceTransformer, util
+
+# ── 載入 sentence-transformer 模型 ────────────────────────
+print("載入語意模型中...")
+semantic_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+print("✅ 語意模型載入完成")
 
 # 載入特徵數據
 song_library = pd.read_csv("song_library.csv")
 song_features = pd.read_csv("song_features.csv")
+
+# 解決不對齊問題：透過 filename 或 title 進行 Merge，確保 index 絕對一致
+song_data = pd.merge(song_library, song_features, on="title", how="inner")
 
 # 用於推薦的特徵欄位（加入 BPM 讓高速/低速歌曲更好區分）
 FEATURE_COLS = [
@@ -24,33 +33,24 @@ FEATURE_COLS = [
 ]
 
 # ── 修正 Essentia 模型的偏差 ──────────────────────────────
-# 問題：Essentia 把所有管弦樂都判為 relaxed（包括緊張的管弦樂）
-# 解法：
-# 1. relaxed 分數用 arousal 修正（arousal 高 = 不太可能真的 relaxed）
-# 2. sad 分數也用 arousal 修正（真正悲傷的歌通常 arousal 不高）
+arousal_norm = (song_data["arousal"] - song_data["arousal"].min()) / \
+               (song_data["arousal"].max() - song_data["arousal"].min() + 1e-8)
 
-# arousal 範圍 [1,9]，低於 4 才是真正 calm
-arousal_norm = (song_features["arousal"] - song_features["arousal"].min()) / \
-               (song_features["arousal"].max() - song_features["arousal"].min() + 1e-8)
-
-# relaxed 修正：arousal 越高，relaxed 越不可信
-song_features["mood_relaxed_corrected"] = (
-    song_features["mood_relaxed"]
-    * (1 - song_features["mood_aggressive"])
-    * (1 - arousal_norm * 0.6)  # arousal 高的歌 relaxed 打 6 折
+song_data["mood_relaxed_corrected"] = (
+    song_data["mood_relaxed"]
+    * (1 - song_data["mood_aggressive"])
+    * (1 - arousal_norm * 0.6)
 )
 
-# sad 修正：arousal 太高的 sad 不太對（激烈的歌不是 sad）
-song_features["mood_sad_corrected"] = (
-    song_features["mood_sad"]
-    * (1 - arousal_norm * 0.3)  # 微調，不要太激進
+song_data["mood_sad_corrected"] = (
+    song_data["mood_sad"]
+    * (1 - arousal_norm * 0.3)
 )
 
 # 正規化特徵到 [0, 1]
-feature_matrix = song_features[FEATURE_COLS].copy()
-# 用修正後的值取代原始的
-feature_matrix["mood_relaxed"] = song_features["mood_relaxed_corrected"]
-feature_matrix["mood_sad"] = song_features["mood_sad_corrected"]
+feature_matrix = song_data[FEATURE_COLS].copy()
+feature_matrix["mood_relaxed"] = song_data["mood_relaxed_corrected"]
+feature_matrix["mood_sad"] = song_data["mood_sad_corrected"]
 for col in FEATURE_COLS:
     min_val = feature_matrix[col].min()
     max_val = feature_matrix[col].max()
@@ -61,129 +61,152 @@ feature_vectors = feature_matrix.values  # shape: (n_songs, n_features)
 # ── 情緒描述 → 目標特徵向量 ──────────────────────────────
 # valence, arousal, bpm, mood_happy, mood_sad, mood_aggressive, mood_relaxed, mood_party, danceability
 MOOD_PROFILES = {
-    "happy": {
-        "valence": 0.9, "arousal": 0.7, "bpm": 0.6,
-        "mood_happy": 0.9, "mood_sad": 0.05, "mood_aggressive": 0.05,
-        "mood_relaxed": 0.3, "mood_party": 0.5, "danceability": 0.6,
-    },
-    "sad": {
-        "valence": 0.15, "arousal": 0.2, "bpm": 0.25,
-        "mood_happy": 0.05, "mood_sad": 0.9, "mood_aggressive": 0.05,
-        "mood_relaxed": 0.5, "mood_party": 0.05, "danceability": 0.1,
-    },
-    "energetic": {
-        "valence": 0.6, "arousal": 0.95, "bpm": 0.8,
-        "mood_happy": 0.5, "mood_sad": 0.05, "mood_aggressive": 0.4,
-        "mood_relaxed": 0.05, "mood_party": 0.6, "danceability": 0.85,
-    },
-    "calm": {
-        "valence": 0.5, "arousal": 0.1, "bpm": 0.15,
-        "mood_happy": 0.2, "mood_sad": 0.1, "mood_aggressive": 0.01,
-        "mood_relaxed": 0.95, "mood_party": 0.05, "danceability": 0.15,
-    },
-    "chill": {
-        "valence": 0.6, "arousal": 0.25, "bpm": 0.35,
-        "mood_happy": 0.4, "mood_sad": 0.05, "mood_aggressive": 0.01,
-        "mood_relaxed": 0.85, "mood_party": 0.1, "danceability": 0.55,
-    },
-    "summer": {
-        "valence": 0.85, "arousal": 0.6, "bpm": 0.65,
-        "mood_happy": 0.85, "mood_sad": 0.01, "mood_aggressive": 0.05,
-        "mood_relaxed": 0.4, "mood_party": 0.65, "danceability": 0.8,
-    },
-
-    "romantic": {
-        "valence": 0.55, "arousal": 0.5, "bpm": 0.45,
-        "mood_happy": 0.45, "mood_sad": 0.55, "mood_aggressive": 0.02,
-        "mood_relaxed": 0.55, "mood_party": 0.15, "danceability": 0.6,
-    },
+    # 1. 高能量正面 (High Arousal, High Valence)
     "party": {
         "valence": 0.85, "arousal": 0.9, "bpm": 0.75,
         "mood_happy": 0.7, "mood_sad": 0.02, "mood_aggressive": 0.15,
         "mood_relaxed": 0.05, "mood_party": 0.95, "danceability": 0.95,
     },
+    "euphoric": {
+        "valence": 0.95, "arousal": 0.95, "bpm": 0.8,
+        "mood_happy": 0.95, "mood_sad": 0.01, "mood_aggressive": 0.1,
+        "mood_relaxed": 0.05, "mood_party": 0.8, "danceability": 0.8,
+    },
+    "romantic_passionate": {
+        "valence": 0.8, "arousal": 0.75, "bpm": 0.6,
+        "mood_happy": 0.75, "mood_sad": 0.1, "mood_aggressive": 0.1,
+        "mood_relaxed": 0.2, "mood_party": 0.4, "danceability": 0.5,
+    },
+    "triumphant": {
+        "valence": 0.85, "arousal": 0.85, "bpm": 0.7,
+        "mood_happy": 0.6, "mood_sad": 0.05, "mood_aggressive": 0.3,
+        "mood_relaxed": 0.05, "mood_party": 0.5, "danceability": 0.4,
+    },
+
+    # 2. 高能量負面 (High Arousal, Low Valence)
     "angry": {
         "valence": 0.1, "arousal": 0.95, "bpm": 0.85,
         "mood_happy": 0.02, "mood_sad": 0.15, "mood_aggressive": 0.95,
         "mood_relaxed": 0.02, "mood_party": 0.15, "danceability": 0.35,
     },
-    "focused": {
-        "valence": 0.4, "arousal": 0.25, "bpm": 0.25,
-        "mood_happy": 0.15, "mood_sad": 0.15, "mood_aggressive": 0.05,
-        "mood_relaxed": 0.7, "mood_party": 0.05, "danceability": 0.2,
+    "epic_dark": {
+        "valence": 0.3, "arousal": 0.9, "bpm": 0.65,
+        "mood_happy": 0.1, "mood_sad": 0.2, "mood_aggressive": 0.8,
+        "mood_relaxed": 0.05, "mood_party": 0.1, "danceability": 0.2,
     },
-    "epic": {
-        "valence": 0.5, "arousal": 0.85, "bpm": 0.7,
-        "mood_happy": 0.2, "mood_sad": 0.15, "mood_aggressive": 0.6,
-        "mood_relaxed": 0.05, "mood_party": 0.2, "danceability": 0.25,
+    "anxious": {
+        "valence": 0.2, "arousal": 0.85, "bpm": 0.8,
+        "mood_happy": 0.05, "mood_sad": 0.3, "mood_aggressive": 0.6,
+        "mood_relaxed": 0.02, "mood_party": 0.1, "danceability": 0.2,
+    },
+
+    # 3. 低能量正面 (Low Arousal, High Valence)
+    "relaxed": {
+        "valence": 0.6, "arousal": 0.25, "bpm": 0.3,
+        "mood_happy": 0.4, "mood_sad": 0.1, "mood_aggressive": 0.01,
+        "mood_relaxed": 0.95, "mood_party": 0.05, "danceability": 0.3,
+    },
+    "romantic_tender": {
+        "valence": 0.65, "arousal": 0.35, "bpm": 0.35,
+        "mood_happy": 0.6, "mood_sad": 0.2, "mood_aggressive": 0.02,
+        "mood_relaxed": 0.7, "mood_party": 0.05, "danceability": 0.3,
+    },
+    "hopeful": {
+        "valence": 0.75, "arousal": 0.45, "bpm": 0.45,
+        "mood_happy": 0.7, "mood_sad": 0.1, "mood_aggressive": 0.05,
+        "mood_relaxed": 0.6, "mood_party": 0.1, "danceability": 0.4,
     },
     "nostalgic": {
-        "valence": 0.35, "arousal": 0.25, "bpm": 0.25,
-        "mood_happy": 0.2, "mood_sad": 0.6, "mood_aggressive": 0.02,
-        "mood_relaxed": 0.7, "mood_party": 0.05, "danceability": 0.15,
+        "valence": 0.5, "arousal": 0.3, "bpm": 0.3,
+        "mood_happy": 0.3, "mood_sad": 0.5, "mood_aggressive": 0.02,
+        "mood_relaxed": 0.7, "mood_party": 0.05, "danceability": 0.2,
     },
-    "drive": {
-        "valence": 0.55, "arousal": 0.55, "bpm": 0.55,
-        "mood_happy": 0.3, "mood_sad": 0.1, "mood_aggressive": 0.1,
-        "mood_relaxed": 0.4, "mood_party": 0.3, "danceability": 0.5,
+
+    # 4. 低能量負面 (Low Arousal, Low Valence)
+    "sad": {
+        "valence": 0.15, "arousal": 0.2, "bpm": 0.25,
+        "mood_happy": 0.05, "mood_sad": 0.9, "mood_aggressive": 0.05,
+        "mood_relaxed": 0.5, "mood_party": 0.05, "danceability": 0.1,
     },
-    "melancholy": {
+    "melancholic": {
+        "valence": 0.3, "arousal": 0.25, "bpm": 0.25,
+        "mood_happy": 0.1, "mood_sad": 0.7, "mood_aggressive": 0.05,
+        "mood_relaxed": 0.6, "mood_party": 0.02, "danceability": 0.1,
+    },
+    "lonely": {
         "valence": 0.2, "arousal": 0.15, "bpm": 0.2,
-        "mood_happy": 0.05, "mood_sad": 0.85, "mood_aggressive": 0.02,
-        "mood_relaxed": 0.7, "mood_party": 0.02, "danceability": 0.05,
+        "mood_happy": 0.05, "mood_sad": 0.8, "mood_aggressive": 0.02,
+        "mood_relaxed": 0.6, "mood_party": 0.02, "danceability": 0.05,
     },
-    "upbeat": {
-        "valence": 0.8, "arousal": 0.75, "bpm": 0.7,
-        "mood_happy": 0.8, "mood_sad": 0.05, "mood_aggressive": 0.1,
-        "mood_relaxed": 0.15, "mood_party": 0.7, "danceability": 0.8,
+    "dark_ambient": {
+        "valence": 0.1, "arousal": 0.1, "bpm": 0.1,
+        "mood_happy": 0.02, "mood_sad": 0.6, "mood_aggressive": 0.1,
+        "mood_relaxed": 0.8, "mood_party": 0.01, "danceability": 0.05,
+    },
+
+    # 中性
+    "focused": {
+        "valence": 0.5, "arousal": 0.5, "bpm": 0.5,
+        "mood_happy": 0.2, "mood_sad": 0.2, "mood_aggressive": 0.1,
+        "mood_relaxed": 0.6, "mood_party": 0.1, "danceability": 0.4,
     },
 }
 
-# 關鍵字映射（每個關鍵字有權重，越具體的關鍵字權重越高）
-KEYWORD_MAP = {
-    "happy": (["happy", "joy", "sunny", "cheerful", "sunshine", "refresh", "bright",
-               "開心", "快樂", "高興", "愉快", "陽光"], 1.0),
-    "sad": (["sad", "cry", "heartbreak", "depressed", "grief", "mourn",
-             "傷心", "悲傷", "難過", "哭", "心碎", "痛苦"], 1.0),
-    "energetic": (["pump", "energy", "workout", "determined", "fight", "power", "intense",
-                   "熱血", "衝刺", "運動", "激動", "拼命", "燃燒"], 1.0),
-    "calm": (["calm", "peaceful", "serene", "quiet", "gentle", "soft", "tranquil",
-              "平靜", "安靜", "寧靜", "溫柔", "柔和"], 1.5),  # 高權重，因為 calm 意圖通常很明確
-    "chill": (["chill", "lofi", "lo-fi", "vibe", "laid back", "mellow", "cozy",
-               "放鬆", "慵懶", "舒服", "chill"], 1.5),
-    "romantic": (["love", "romantic", "heart", "butterflies", "kiss", "date", "sweet",
-                  "愛情", "浪漫", "甜蜜", "約會", "心動", "告白"], 1.0),
-    "party": (["party", "dance", "club", "disco", "rave", "celebrate",
-               "派對", "跳舞", "慶祝", "夜店", "KTV"], 1.0),
-    "angry": (["angry", "rage", "fury", "destroy", "pissed", "mad",
-               "生氣", "憤怒", "暴躁", "不爽"], 1.0),
-    "focused": (["focus", "study", "concentrate", "productive", "coding", "work",
-                 "專注", "讀書", "工作", "專心", "趕報告", "考試"], 1.0),
-    "epic": (["epic", "cinematic", "grand", "heroic", "boss", "battle", "war",
-              "史詩", "壯觀", "英雄", "戰鬥", "BOSS"], 1.0),
-    "nostalgic": (["nostalgic", "memory", "remember", "miss", "past", "childhood",
-                   "懷念", "回憶", "想念", "以前", "從前"], 1.0),
-    "drive": (["drive", "driving", "road", "highway", "car", "night drive",
-               "開車", "兜風", "公路"], 1.2),
-    "melancholy": (["melancholy", "lonely", "alone", "solitude", "empty", "hollow",
-                    "孤獨", "寂寞", "空虛", "一個人"], 0.8),  # 低權重，很多場景都有 "alone" 但不一定是憂鬱
-    "upbeat": (["upbeat", "fun", "playful", "lively", "exciting",
-                "好玩", "有趣", "活潑", "興奮"], 1.0),
-    "summer": (["summer", "beach", "pool", "sunshine", "ocean", "tropical", "sea",
-                "夏天", "海邊", "泳池", "陽光", "沙灘", "熱帶"], 1.5),  # 高權重，場景明確
+# ── 語意描述（給 sentence-transformer 用）──────────────────
+# 每個 mood 用多種表達方式描述，涵蓋中英文、同義詞、場景描述
+MOOD_DESCRIPTIONS = {
+    # 1. 高能量正面
+    "party": "party dance club disco rave celebrate festival nightlife DJ lit groove 派對 跳舞 慶祝 夜店 KTV 嗨 狂歡 節慶",
+    "euphoric": "euphoric ecstatic peak experience ultimate joy pure bliss absolute happiness amazing 狂喜 頂點 高峰體驗 極度快樂 超爽",
+    "romantic_passionate": "passionate romance deep love intense desire fiery kiss burning love infatuation 熱戀 激情 渴望 熱烈的愛情 深愛 狂熱",
+    "triumphant": "triumphant winning victory success champion overcoming heroic epic win glory 勝利 成就感 成功 冠軍 榮耀 克服 達成",
+
+    # 2. 高能量負面
+    "angry": "angry rage fury furious frustrated destroy pissed off mad aggressive violent 生氣 憤怒 暴躁 不爽 氣炸 崩潰 攻擊",
+    "epic_dark": "epic dark cinematic tense intense boss battle intense war dramatic orchestral threat 史詩 黑暗 對決 緊張 危機 威脅 戰鬥",
+    "anxious": "anxious panic nervous stressful tense uneasy racing thoughts worry jittery 焦慮 緊繃 恐慌 緊張 擔憂 神經質 壓力",
+
+    # 3. 低能量正面
+    "relaxed": "chill lofi vibe laid back mellow cozy relaxed lazy afternoon coffee quiet peace 放鬆 慵懶 舒服 悠閒 平靜 寧靜 休息",
+    "romantic_tender": "tender romance gentle love sweetheart soft affection cuddling sweet warm 溫柔的愛情 輕柔 甜蜜 依偎 溫馨 浪漫",
+    "hopeful": "hopeful optimistic bright future warming sunrise believing inspiring uplifting 希望 溫暖 期待 黎明 曙光 樂觀 振奮",
+    "nostalgic": "nostalgic memories remembering missing the past childhood old times bittersweet 懷念 想念 回憶 以前 過去 逝去的美好",
+
+    # 4. 低能量負面
+    "sad": "sad depressed heartbroken crying grief mourning feeling down blue tears broken 傷心 悲傷 難過 哭 心碎 痛苦 悲痛",
+    "melancholic": "melancholy contemplative wistful pensive gloomy rainy day sorrow reflective 憂鬱 惆悵 沉思 陰天 遺憾 傷感",
+    "lonely": "lonely alone solitude empty hollow isolated solitary longing missing someone 孤獨 寂寞 空洞 孤直 一個人 沒人陪",
+    "dark_ambient": "dark ambient heavy oppressive bleak scary haunting cold void abyss 黑暗 壓抑 沉重 深淵 冰冷 窒息 詭異",
+
+    # 中性
+    "focused": "focused studying concentration productive coding working deep work in the zone 專注 讀書 工作 專心 趕報告 集中精神 穩重",
 }
+
+# 預計算 mood description 的 embeddings
+print("預計算語意向量中...")
+mood_names = list(MOOD_DESCRIPTIONS.keys())
+mood_texts = [MOOD_DESCRIPTIONS[m] for m in mood_names]
+mood_embeddings = semantic_model.encode(mood_texts, convert_to_tensor=True)
+print("✅ 語意向量準備完成\n")
+
+# ── 語意匹配閾值設定 ──────────────────────────────────────
+SIMILARITY_THRESHOLD = 0.25   # 最低相似度才會被視為匹配
+TOP_MOODS = 3                 # 最多取前 N 個 mood
 
 
 def detect_mood_profiles(text):
-    """偵測所有匹配的 mood 並回傳加權混合向量"""
-    text_lower = text.lower()
-    matched = []
+    """用語意相似度偵測匹配的 mood profiles"""
+    query_embedding = semantic_model.encode(text, convert_to_tensor=True)
+    cos_scores = util.cos_sim(query_embedding, mood_embeddings)[0].cpu().numpy()
 
-    for mood, (keywords, weight) in KEYWORD_MAP.items():
-        for kw in keywords:
-            if kw in text_lower:
-                matched.append((mood, weight))
-                break  # 每個 mood 只匹配一次
+    # 取所有超過閾值的 mood，按相似度排序
+    scored = [(mood_names[i], float(cos_scores[i])) for i in range(len(mood_names))]
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    matched = []
+    for mood, score in scored[:TOP_MOODS]:
+        if score >= SIMILARITY_THRESHOLD:
+            matched.append((mood, score))
 
     return matched
 
@@ -204,70 +227,8 @@ def blend_profiles(matched_moods):
     return blended
 
 
-def translate_to_english(text):
-    """中文→英文翻譯，帶有 fallback 機制"""
-    if not text or not text.strip():
-        return text
-    ascii_ratio = sum(c.isascii() for c in text) / max(len(text), 1)
-    if ascii_ratio > 0.8:
-        return text
-
-    # 提取原文中的純英文單詞（如 "chill", "upbeat"）保留下來，避免被翻譯器吃掉
-    import re
-    english_words = re.findall(r'[a-zA-Z]+', text)
-    english_suffix = " ".join(english_words)
-
-    # 先嘗試 argostranslate
-    try:
-        translated = argostranslate.translate.translate(text, "zh", "en")
-        if translated and translated.strip():
-            if english_suffix and english_suffix.lower() not in translated.lower():
-                translated = f"{translated} {english_suffix}"
-            print(f"  [翻譯] {text} → {translated}")
-            return translated
-    except Exception as e:
-        print(f"  [翻譯失敗] argostranslate error: {e}")
-
-    # Fallback: 用關鍵字映射表做基本轉換
-    FALLBACK_MAP = {
-        "開心": "happy", "快樂": "happy", "高興": "happy", "愉快": "happy",
-        "傷心": "sad", "悲傷": "sad", "難過": "sad", "哭": "cry",
-        "心碎": "heartbreak", "痛苦": "depressed",
-        "平靜": "calm", "安靜": "quiet", "寧靜": "peaceful", "溫柔": "gentle",
-        "放鬆": "chill", "慵懶": "chill", "舒服": "cozy",
-        "熱血": "energetic", "衝刺": "energetic", "運動": "workout",
-        "激動": "intense", "燃燒": "intense",
-        "愛情": "love", "浪漫": "romantic", "甜蜜": "sweet",
-        "約會": "date", "心動": "butterflies", "告白": "love",
-        "派對": "party", "跳舞": "dance", "慶祝": "celebrate", "夜店": "club",
-        "生氣": "angry", "憤怒": "angry", "暴躁": "rage", "不爽": "pissed",
-        "專注": "focus", "讀書": "study", "工作": "work", "專心": "concentrate",
-        "趕報告": "productive", "考試": "study",
-        "史詩": "epic", "壯觀": "grand", "英雄": "heroic", "戰鬥": "battle",
-        "懷念": "nostalgic", "回憶": "memory", "想念": "miss",
-        "開車": "drive", "兜風": "driving", "公路": "highway",
-        "孤獨": "lonely", "寂寞": "alone", "空虛": "empty", "一個人": "alone",
-        "好玩": "fun", "有趣": "playful", "活潑": "lively", "興奮": "exciting",
-        "深夜": "late night", "夜晚": "night", "早晨": "morning",
-        "陽光": "sunny", "分手": "breakup", "想念": "miss",
-    }
-    fallback_parts = []
-    for zh, en in FALLBACK_MAP.items():
-        if zh in text:
-            fallback_parts.append(en)
-    if fallback_parts:
-        if english_suffix:
-            fallback_parts.append(english_suffix)
-        result = " ".join(fallback_parts)
-        print(f"  [翻譯 fallback] {text} → {result}")
-        return result
-
-    print(f"  [翻譯] 無法翻譯，使用原文: {text}")
-    return text
-
-
 def euclidean_sim(a, b):
-    # Euclidean distance converted to a similarity score [0, 1]
+    """Euclidean distance converted to a similarity score [0, 1]"""
     dist = np.linalg.norm(a - b)
     return 1 / (1 + dist)
 
@@ -279,29 +240,18 @@ def recommend(mood_description, top_k=5, return_results=False):
             print("  ⚠️ 請輸入情緒描述")
         return []
 
-    # 翻譯（如果是中文）
-    english = translate_to_english(mood_description)
-
-    # 偵測所有匹配的 moods（同時用中文和英文偵測）
-    matched = detect_mood_profiles(english)
-    matched_cn = detect_mood_profiles(mood_description)
-
-    # 合併（去重）
-    seen = set(m for m, _ in matched)
-    for mood, weight in matched_cn:
-        if mood not in seen:
-            matched.append((mood, weight))
-            seen.add(mood)
+    # 語意匹配（直接支援中英文，不需翻譯）
+    matched = detect_mood_profiles(mood_description)
 
     if matched:
         target_vector = blend_profiles(matched)
-        detected_str = " + ".join(f"{m}({w:.1f})" for m, w in matched)
+        detected_str = " + ".join(f"{m}({w:.2f})" for m, w in matched)
     else:
-        # 預設用 calm（中性，不會太偏）
+        # 預設用 focused（中性，不會太偏）
         target_vector = np.array([
-            MOOD_PROFILES["calm"][col] for col in FEATURE_COLS
+            MOOD_PROFILES["focused"][col] for col in FEATURE_COLS
         ])
-        detected_str = "default(calm)"
+        detected_str = "default(focused)"
 
     if not return_results:
         print(f"  [偵測到] {detected_str}")
@@ -316,10 +266,8 @@ def recommend(mood_description, top_k=5, return_results=False):
 
     if not return_results:
         print(f"\n🎵 情緒描述：「{mood_description}」")
-        if english != mood_description:
-            print(f"   English: \"{english}\"")
         for rank, idx in enumerate(top_indices):
-            title = song_library.iloc[idx]["title"]
+            title = song_data.iloc[idx]["title"]
             print(f"  {rank + 1}. {title}  (相似度: {scores[idx]:.3f})")
 
     return list(zip(top_indices, scores[top_indices]))
@@ -327,6 +275,13 @@ def recommend(mood_description, top_k=5, return_results=False):
 
 # ── 測試 ──────────────────────────────────────────────────
 if __name__ == "__main__":
+    print("=" * 60)
+    recommend("feeling blue after a rainy day")
+    print()
     recommend("傷心的分手之夜")
+    print()
     recommend("和喜歡的人約會")
+    print()
+    recommend("I need something to pump me up for the gym")
+    print()
     recommend("戀愛情境除了純粹的「甜蜜粉紅泡泡」，有時候更多的是對遠方另一半的想念。這種情緒比較綿長、溫柔，帶點渴望卻不悲傷")
