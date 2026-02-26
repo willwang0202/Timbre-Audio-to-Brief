@@ -132,13 +132,14 @@ def get_youtube_video_id(query):
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
 
-    # 1. ytmusicapi
-    try:
-        results = ytmusic.search(query, filter="songs")
-        if results and len(results) > 0 and 'videoId' in results[0]:
-            return results[0]['videoId']
-    except Exception as e:
-        print(f"  [Fallback 1 Failed] ytmusicapi: {e}")
+    # 1. ytmusicapi (專攻純音樂，若包含 "video" 等字眼則跳過以避免抓到純音軌)
+    if "video" not in query.lower() and "official" not in query.lower():
+        try:
+            results = ytmusic.search(query, filter="songs")
+            if results and len(results) > 0 and 'videoId' in results[0]:
+                return results[0]['videoId']
+        except Exception as e:
+            print(f"  [Fallback 1 Failed] ytmusicapi: {e}")
 
     # 2. DuckDuckGo Search (穩定的網頁抓取)
     try:
