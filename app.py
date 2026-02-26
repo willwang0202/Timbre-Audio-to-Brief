@@ -113,18 +113,17 @@ def t(key, lang="zh"):
 
 
 # ── YouTube 搜尋與嵌入 ──────────────────────────────────────
+from ytmusicapi import YTMusic
+ytmusic = YTMusic()
+
 def get_youtube_video_id(query):
-    """搜尋 YouTube，回傳第一個結果的 video ID"""
+    """使用 ytmusicapi 搜尋 YouTube 音樂，回傳第一個結果的 video ID"""
     try:
-        encoded = urllib.parse.quote(query)
-        url = f"https://www.youtube.com/results?search_query={encoded}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        html = urllib.request.urlopen(req, timeout=5).read().decode("utf-8")
-        match = re.search(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)
-        if match:
-            return match.group(1)
+        results = ytmusic.search(query, filter="songs")
+        if results and len(results) > 0 and 'videoId' in results[0]:
+            return results[0]['videoId']
     except Exception as e:
-        print(f"  ⚠️ YouTube search failed for '{query}': {e}")
+        print(f"  ⚠️ ytmusicapi search failed for '{query}': {e}")
     return None
 
 
