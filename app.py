@@ -2,10 +2,22 @@ import gradio as gr
 import urllib.parse
 import urllib.request
 import re
+import os
 import pandas as pd
 from download_models import ensure_models
 ensure_models()  # 確保模型已下載（HF Spaces 首次啟動時）
 from recommend_v2 import recommend, song_library, song_features
+
+def get_local_audio_path(filename):
+    """取得本地音檔路徑（如果存在的話）"""
+    possible_paths = [
+        os.path.join("songs", filename),
+        os.path.join("..", "songs", filename)
+    ]
+    for p in possible_paths:
+        if os.path.exists(p):
+            return p
+    return None
 
 
 # ── i18n 翻譯字典 ───────────────────────────────────────────
@@ -148,8 +160,19 @@ def build_player_html(title, video_id, lang="zh"):
 # ── CSS ─────────────────────────────────────────────────────
 CARD_STYLE = """
 <style>
+    .timbre-results {
+        background: #ffffff;
+        color: #333;
+        padding: 16px;
+        border-radius: 12px;
+    }
+    .timbre-results h2 {
+        color: #212529;
+        margin: 0 0 12px 0;
+    }
     .song-card {
         background: #f8f9fa;
+        color: #333;
         border-radius: 12px;
         padding: 16px;
         margin: 12px 0;
@@ -162,11 +185,12 @@ CARD_STYLE = """
         font-size: 18px;
     }
     .song-card .score {
-        color: #6c757d;
+        color: #555;
         font-size: 13px;
     }
     .spec-section {
         background: #fff8e1;
+        color: #333;
         border-radius: 12px;
         padding: 20px;
         margin: 16px 0;
@@ -184,44 +208,53 @@ CARD_STYLE = """
         margin: 4px 0;
     }
     .suggestion-item {
-        color: #555;
+        color: #444;
         font-size: 14px;
         line-height: 1.6;
         margin: 2px 0;
         padding-left: 8px;
     }
     .brief-footer {
-        color: #888;
+        color: #666;
         font-size: 12px;
         margin-top: 16px;
         text-align: center;
     }
     .feat-detail {
-        color: #666;
+        color: #555;
         font-size: 13px;
         margin-top: 8px;
         line-height: 1.6;
     }
 </style>
+<div class="timbre-results">
 """
 
 
 
-# ── 業主版 ──────────────────────────────────────────────────
 def recommend_for_client(mood, lang):
-    """業主版：推薦音樂 + 嵌入式 YouTube 播放器"""
+    """業主版：推薦音樂 + 嵌入式 YouTube 播放器 / 本地播放器"""
     if not mood.strip():
-        return f"<p>{t('empty_input', lang)}</p>"
+        return f"<p>{t('empty_input', lang)}</p>", gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
 
     results = recommend(mood, top_k=3, return_results=True)
 
     html = CARD_STYLE
     html += f"<h2 style='color:#212529;'>{t('client_header', lang)}</h2>"
 
+    audio_updates = [gr.update(visible=False, value=None)] * 3
+
     for i, (idx, score) in enumerate(results):
         title = song_library.iloc[idx]['title']
-        video_id = get_youtube_video_id(title)
-        player = build_player_html(title, video_id, lang)
+        filename = song_library.iloc[idx]['filename']
+        local_path = get_local_audio_path(filename)
+        
+        if local_path:
+            audio_updates[i] = gr.update(visible=True, value=local_path, label=f"{i+1}. {title}")
+            player = "" # 不嵌入 YouTube，改用 Gradio 直接播
+        else:
+            video_id = get_youtube_video_id(title)
+            player = build_player_html(title, video_id, lang)
 
         html += f'''
         <div class="song-card">
@@ -230,7 +263,8 @@ def recommend_for_client(mood, lang):
         </div>'''
 
     html += f'<div class="brief-footer">{t("client_footer_1", lang)}</div>'
-    return html
+    html += '</div>'
+    return html, audio_updates[0], audio_updates[1], audio_updates[2]
 
 
 # ── 聲學規格建議 ────────────────────────────────────────────
@@ -319,23 +353,31 @@ def generate_acoustic_brief_html(avg, lang):
     return html
 
 
-# ── 音樂人版 ────────────────────────────────────────────────
 def recommend_for_musician(mood, lang):
     """音樂人版：嵌入式播放器 + 聲學參數 + 規格書"""
     if not mood.strip():
-        return f"<p>{t('empty_input', lang)}</p>"
+        return f"<p>{t('empty_input', lang)}</p>", gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
 
     results = recommend(mood, top_k=3, return_results=True)
 
     html = CARD_STYLE
     html += f"<h2 style='color:#212529;'>{t('musician_header', lang)}</h2>"
     feature_rows = []
+    
+    audio_updates = [gr.update(visible=False, value=None)] * 3
 
     for i, (idx, score) in enumerate(results):
         title = song_library.iloc[idx]['title']
+        filename = song_library.iloc[idx]['filename']
         feature_row = song_features[song_features['title'] == title]
-        video_id = get_youtube_video_id(title)
-        player = build_player_html(title, video_id, lang)
+        
+        local_path = get_local_audio_path(filename)
+        if local_path:
+            audio_updates[i] = gr.update(visible=True, value=local_path, label=f"{i+1}. {title}")
+            player = ""
+        else:
+            video_id = get_youtube_video_id(title)
+            player = build_player_html(title, video_id, lang)
 
         html += f'<div class="song-card">'
         html += f'<h3>{i+1}. {title}</h3>'
@@ -376,8 +418,8 @@ def recommend_for_musician(mood, lang):
             </div>
             {generate_acoustic_brief_html(avg, lang)}
         </div>'''
-
-    return html
+    html += '</div>'
+    return html, audio_updates[0], audio_updates[1], audio_updates[2]
 
 
 # ── Gradio 介面 ─────────────────────────────────────────────
@@ -408,7 +450,12 @@ with gr.Blocks(title="Timbre Audio-to-Brief Engine") as demo:
         client_btn = gr.Button("🎬 我是業主（找參考音樂）", variant="primary")
         musician_btn = gr.Button("🎸 我是音樂人（看聲學規格）", variant="secondary")
 
-    output_html = gr.HTML(label="推薦結果 Results")
+    with gr.Column():
+        output_html = gr.HTML(label="推薦結果 Results")
+        with gr.Row():
+            audio_out_1 = gr.Audio(visible=False, interactive=False)
+            audio_out_2 = gr.Audio(visible=False, interactive=False)
+            audio_out_3 = gr.Audio(visible=False, interactive=False)
 
     # 語言切換邏輯
     def switch_language(lang_choice):
@@ -428,7 +475,9 @@ with gr.Blocks(title="Timbre Audio-to-Brief Engine") as demo:
         outputs=[lang_state, title_md, subtitle_md, mood_input, client_btn, musician_btn],
     )
 
-    client_btn.click(fn=recommend_for_client, inputs=[mood_input, lang_state], outputs=output_html)
-    musician_btn.click(fn=recommend_for_musician, inputs=[mood_input, lang_state], outputs=output_html)
+    outputs = [output_html, audio_out_1, audio_out_2, audio_out_3]
 
-demo.launch(server_name="0.0.0.0", server_port=7860)
+    client_btn.click(fn=recommend_for_client, inputs=[mood_input, lang_state], outputs=outputs)
+    musician_btn.click(fn=recommend_for_musician, inputs=[mood_input, lang_state], outputs=outputs)
+
+demo.launch(server_name="0.0.0.0", server_port=7860, allowed_paths=["songs", "../songs"])
