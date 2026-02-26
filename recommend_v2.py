@@ -24,6 +24,9 @@ song_features = pd.read_csv("song_features.csv")
 
 # 解決不對齊問題：透過 filename 或 title 進行 Merge，確保 index 絕對一致
 song_data = pd.merge(song_library, song_features, on="title", how="inner")
+song_emotions = pd.read_csv("song_emotions.csv")[["title", "emotion"]].drop_duplicates(subset=["title"])
+song_data = pd.merge(song_data, song_emotions, on="title", how="left")
+song_data["emotion"] = song_data["emotion"].fillna("focused")
 
 # 用於推薦的特徵欄位（加入 BPM 讓高速/低速歌曲更好區分）
 FEATURE_COLS = [
@@ -154,77 +157,40 @@ MOOD_PROFILES = {
 
 # ── 語意描述（給 sentence-transformer 用）──────────────────
 # 每個 mood 用多種表達方式描述，涵蓋中英文、同義詞、場景描述
-MOOD_DESCRIPTIONS = {
-    # 1. 高能量正面
-    "party": "party dance club disco rave celebrate festival nightlife DJ lit groove 派對 跳舞 慶祝 夜店 KTV 嗨 狂歡 節慶",
-    "euphoric": "euphoric ecstatic peak experience ultimate joy pure bliss absolute happiness amazing 狂喜 頂點 高峰體驗 極度快樂 超爽",
-    "romantic_passionate": "passionate romance deep love intense desire fiery kiss burning love infatuation 熱戀 激情 渴望 熱烈的愛情 深愛 狂熱",
-    "triumphant": "triumphant winning victory success champion overcoming heroic epic win glory 勝利 成就感 成功 冠軍 榮耀 克服 達成",
-
-    # 2. 高能量負面
-    "angry": "angry rage fury furious frustrated destroy pissed off mad aggressive violent 生氣 憤怒 暴躁 不爽 氣炸 崩潰 攻擊",
-    "epic_dark": "epic dark cinematic tense intense boss battle intense war dramatic orchestral threat 史詩 黑暗 對決 緊張 危機 威脅 戰鬥",
-    "anxious": "anxious panic nervous stressful tense uneasy racing thoughts worry jittery 焦慮 緊繃 恐慌 緊張 擔憂 神經質 壓力",
-
-    # 3. 低能量正面
-    "relaxed": "chill lofi vibe laid back mellow cozy relaxed lazy afternoon coffee quiet peace 放鬆 慵懶 舒服 悠閒 平靜 寧靜 休息",
-    "romantic_tender": "tender romance gentle love sweetheart soft affection cuddling sweet warm 溫柔的愛情 輕柔 甜蜜 依偎 溫馨 浪漫",
-    "hopeful": "hopeful optimistic bright future warming sunrise believing inspiring uplifting 希望 溫暖 期待 黎明 曙光 樂觀 振奮",
-    "nostalgic": "nostalgic memories remembering missing the past childhood old times bittersweet 懷念 想念 回憶 以前 過去 逝去的美好",
-
-    # 4. 低能量負面
-    "sad": "sad depressed heartbroken crying grief mourning feeling down blue tears broken 傷心 悲傷 難過 哭 心碎 痛苦 悲痛",
-    "melancholic": "melancholy contemplative wistful pensive gloomy rainy day sorrow reflective 憂鬱 惆悵 沉思 陰天 遺憾 傷感",
-    "lonely": "lonely alone solitude empty hollow isolated solitary longing missing someone 孤獨 寂寞 空洞 孤直 一個人 沒人陪",
-    "dark_ambient": "dark ambient heavy oppressive bleak scary haunting cold void abyss 黑暗 壓抑 沉重 深淵 冰冷 窒息 詭異",
-
-    # 中性
-    "focused": "focused studying concentration productive coding working deep work in the zone 專注 讀書 工作 專心 趕報告 集中精神 穩重",
+EMOTION_DESCRIPTIONS = {
+    'sad':        "heartbreak crying alone grief loss breakup tears sorrow",
+    'melancholic': "nostalgic bittersweet longing wistful memories fading away",
+    'lonely':     "isolated empty alone midnight silence abandoned",
+    'relaxed':    "calm peaceful lofi coffee reading sunday morning slow",
+    'focused':    "studying working concentration late night deadline anxious determined",
+    'hopeful':    "optimistic bright new beginning sunrise warm gentle",
+    'romantic_passionate': "falling in love heart racing butterflies first kiss passion",
+    'romantic_tender': "slow dance holding hands gentle kiss soft warm intimate",
+    'party':      "dancing drinking friends celebration club night out energy",
+    'triumphant': "victory achievement powerful epic cinematic hero winning",
+    'anxious':    "nervous tense worried stressed panic rushing overwhelmed",
+    'angry':      "rage aggressive intense dark heavy metal punk fighting",
 }
 
 # 預計算 mood description 的 embeddings
-print("預計算語意向量中...")
-mood_names = list(MOOD_DESCRIPTIONS.keys())
-mood_texts = [MOOD_DESCRIPTIONS[m] for m in mood_names]
-mood_embeddings = semantic_model.encode(mood_texts, convert_to_tensor=True)
+print("預計算情緒語意向量中...")
+emotion_embeddings = {
+    emotion: semantic_model.encode(desc, convert_to_tensor=True)
+    for emotion, desc in EMOTION_DESCRIPTIONS.items()
+}
 print("✅ 語意向量準備完成\n")
 
-# ── 語意匹配閾值設定 ──────────────────────────────────────
-SIMILARITY_THRESHOLD = 0.25   # 最低相似度才會被視為匹配
-TOP_MOODS = 3                 # 最多取前 N 個 mood
-
-
-def detect_mood_profiles(text):
-    """用語意相似度偵測匹配的 mood profiles"""
-    query_embedding = semantic_model.encode(text, convert_to_tensor=True)
-    cos_scores = util.cos_sim(query_embedding, mood_embeddings)[0].cpu().numpy()
-
-    # 取所有超過閾值的 mood，按相似度排序
-    scored = [(mood_names[i], float(cos_scores[i])) for i in range(len(mood_names))]
-    scored.sort(key=lambda x: x[1], reverse=True)
-
-    matched = []
-    for mood, score in scored[:TOP_MOODS]:
-        if score >= SIMILARITY_THRESHOLD:
-            matched.append((mood, score))
-
-    return matched
-
-
-def blend_profiles(matched_moods):
-    """把多個 mood profile 按權重混合"""
-    if not matched_moods:
-        return None
-
-    total_weight = sum(w for _, w in matched_moods)
-    blended = np.zeros(len(FEATURE_COLS))
-
-    for mood, weight in matched_moods:
-        profile = MOOD_PROFILES[mood]
-        vec = np.array([profile[col] for col in FEATURE_COLS])
-        blended += vec * (weight / total_weight)
-
-    return blended
+def detect_emotion_semantic(text):
+    """將輸入文字對應到最符合的 Emotion 標籤"""
+    query_tensor = semantic_model.encode(text, convert_to_tensor=True)
+    
+    scores = {}
+    for emotion, em_tensor in emotion_embeddings.items():
+        cos_score = util.cos_sim(query_tensor, em_tensor)[0].cpu().numpy()[0]
+        scores[emotion] = float(cos_score)
+        
+    best = max(scores, key=scores.get)
+    return best, scores
 
 
 def euclidean_sim(a, b):
@@ -240,37 +206,38 @@ def recommend(mood_description, top_k=5, return_results=False):
             print("  ⚠️ 請輸入情緒描述")
         return []
 
-    # 語意匹配（直接支援中英文，不需翻譯）
-    matched = detect_mood_profiles(mood_description)
-
-    if matched:
-        target_vector = blend_profiles(matched)
-        detected_str = " + ".join(f"{m}({w:.2f})" for m, w in matched)
-    else:
-        # 預設用 focused（中性，不會太偏）
-        target_vector = np.array([
-            MOOD_PROFILES["focused"][col] for col in FEATURE_COLS
-        ])
-        detected_str = "default(focused)"
-
+    # 1. 使用 Sentence-Transformers 將情境描述映射到最接近的 Emotion
+    best_emotion, scores = detect_emotion_semantic(mood_description)
+    
     if not return_results:
-        print(f"  [偵測到] {detected_str}")
+        print(f"  [情緒偵測] {mood_description} → {best_emotion} ({scores[best_emotion]:.3f})")
 
-    # 計算相似度
-    scores = np.array([
+    # 2. 獲取該情緒對應的目標特徵向量 (供後續排序使用)
+    target_vector = np.array([
+        MOOD_PROFILES.get(best_emotion, MOOD_PROFILES["focused"])[col] for col in FEATURE_COLS
+    ])
+
+    # 3. 計算所有歌曲的 Euclidean 相似度
+    sim_scores = np.array([
         euclidean_sim(feature_vectors[i], target_vector)
         for i in range(len(feature_vectors))
     ])
-
-    top_indices = np.argsort(scores)[::-1][:top_k]
+    
+    # 4. 根據情緒過濾歌庫 (賦予極高權重，讓符合 emotion 的歌曲優先排在前面)
+    is_matching_emotion = (song_data["emotion"] == best_emotion).values
+    final_scores = sim_scores + (is_matching_emotion * 100.0)
+    
+    top_indices = np.argsort(final_scores)[::-1][:top_k]
 
     if not return_results:
         print(f"\n🎵 情緒描述：「{mood_description}」")
         for rank, idx in enumerate(top_indices):
             title = song_data.iloc[idx]["title"]
-            print(f"  {rank + 1}. {title}  (相似度: {scores[idx]:.3f})")
+            real_score = sim_scores[idx]
+            match_mark = "⭐" if is_matching_emotion[idx] else ""
+            print(f"  {rank + 1}. {title} {match_mark} (特徵相似度: {real_score:.3f})")
 
-    return list(zip(top_indices, scores[top_indices]))
+    return list(zip(top_indices, sim_scores[top_indices]))
 
 
 # ── 測試 ──────────────────────────────────────────────────
