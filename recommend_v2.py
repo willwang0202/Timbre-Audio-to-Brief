@@ -82,10 +82,16 @@ MOOD_PROFILES = {
         "mood_relaxed": 0.95, "mood_party": 0.05, "danceability": 0.15,
     },
     "chill": {
-        "valence": 0.45, "arousal": 0.15, "bpm": 0.2,
-        "mood_happy": 0.15, "mood_sad": 0.2, "mood_aggressive": 0.01,
-        "mood_relaxed": 0.9, "mood_party": 0.05, "danceability": 0.2,
+        "valence": 0.6, "arousal": 0.25, "bpm": 0.35,
+        "mood_happy": 0.4, "mood_sad": 0.05, "mood_aggressive": 0.01,
+        "mood_relaxed": 0.85, "mood_party": 0.1, "danceability": 0.55,
     },
+    "summer": {
+        "valence": 0.85, "arousal": 0.6, "bpm": 0.65,
+        "mood_happy": 0.85, "mood_sad": 0.01, "mood_aggressive": 0.05,
+        "mood_relaxed": 0.4, "mood_party": 0.65, "danceability": 0.8,
+    },
+
     "romantic": {
         "valence": 0.55, "arousal": 0.5, "bpm": 0.45,
         "mood_happy": 0.45, "mood_sad": 0.55, "mood_aggressive": 0.02,
@@ -163,6 +169,8 @@ KEYWORD_MAP = {
                     "孤獨", "寂寞", "空虛", "一個人"], 0.8),  # 低權重，很多場景都有 "alone" 但不一定是憂鬱
     "upbeat": (["upbeat", "fun", "playful", "lively", "exciting",
                 "好玩", "有趣", "活潑", "興奮"], 1.0),
+    "summer": (["summer", "beach", "pool", "sunshine", "ocean", "tropical", "sea",
+                "夏天", "海邊", "泳池", "陽光", "沙灘", "熱帶"], 1.5),  # 高權重，場景明確
 }
 
 
@@ -204,10 +212,17 @@ def translate_to_english(text):
     if ascii_ratio > 0.8:
         return text
 
+    # 提取原文中的純英文單詞（如 "chill", "upbeat"）保留下來，避免被翻譯器吃掉
+    import re
+    english_words = re.findall(r'[a-zA-Z]+', text)
+    english_suffix = " ".join(english_words)
+
     # 先嘗試 argostranslate
     try:
         translated = argostranslate.translate.translate(text, "zh", "en")
         if translated and translated.strip():
+            if english_suffix and english_suffix.lower() not in translated.lower():
+                translated = f"{translated} {english_suffix}"
             print(f"  [翻譯] {text} → {translated}")
             return translated
     except Exception as e:
@@ -241,6 +256,8 @@ def translate_to_english(text):
         if zh in text:
             fallback_parts.append(en)
     if fallback_parts:
+        if english_suffix:
+            fallback_parts.append(english_suffix)
         result = " ".join(fallback_parts)
         print(f"  [翻譯 fallback] {text} → {result}")
         return result
@@ -249,13 +266,10 @@ def translate_to_english(text):
     return text
 
 
-def cosine_sim(a, b):
-    dot = np.dot(a, b)
-    norm_a = np.linalg.norm(a)
-    norm_b = np.linalg.norm(b)
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
+def euclidean_sim(a, b):
+    # Euclidean distance converted to a similarity score [0, 1]
+    dist = np.linalg.norm(a - b)
+    return 1 / (1 + dist)
 
 
 def recommend(mood_description, top_k=5, return_results=False):
@@ -294,7 +308,7 @@ def recommend(mood_description, top_k=5, return_results=False):
 
     # 計算相似度
     scores = np.array([
-        cosine_sim(feature_vectors[i], target_vector)
+        euclidean_sim(feature_vectors[i], target_vector)
         for i in range(len(feature_vectors))
     ])
 
