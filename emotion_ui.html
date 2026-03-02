@@ -1350,72 +1350,118 @@ window.addEventListener('resize', () => {
 });
 
 // ══════════════════════════════════════════════════
-//  TIMBRE BRIDGE — Find Reference Music via Gradio API
+//  TIMBRE BRIDGE — JS-native recommendation
+//  window.__TIMBRE_SONGS__ is injected by app.py at startup
 // ══════════════════════════════════════════════════
 
-// srcdoc iframes have window.location.origin === "null" (about:srcdoc origin).
-// With sandbox="allow-same-origin", window.parent is accessible and holds the
-// real Gradio server origin (e.g. https://wca0202-timbre-audio-to-brief.hf.space).
-// document.baseURI also inherits the parent URL per the HTML spec and is a
-// reliable fallback.
-const GRADIO_API_ROOT = (() => {
-  try {
-    const o = window.parent.location.origin;
-    if (o && o !== 'null') return o;
-  } catch (_) {}
-  try {
-    const o = new URL('/', document.baseURI).origin;
-    if (o && o !== 'null') return o;
-  } catch (_) {}
-  return window.location.origin;
-})();
+// Valence/Arousal/Mood target for each core emotion and blend
+const EMOTION_PROFILES = {
+  joy:                   { v:7.5, a:6.5, h:0.90, s:0.00, ag:0.05, r:0.10, p:0.50, d:0.60 },
+  calm:                  { v:6.0, a:2.5, h:0.40, s:0.10, ag:0.00, r:0.90, p:0.05, d:0.20 },
+  sadness:               { v:2.5, a:3.0, h:0.00, s:0.90, ag:0.05, r:0.30, p:0.00, d:0.10 },
+  anger:                 { v:2.5, a:7.5, h:0.00, s:0.10, ag:0.90, r:0.00, p:0.15, d:0.30 },
+  fear:                  { v:2.0, a:6.5, h:0.00, s:0.50, ag:0.30, r:0.10, p:0.00, d:0.10 },
+  anticipation:          { v:6.0, a:6.0, h:0.50, s:0.10, ag:0.15, r:0.10, p:0.30, d:0.40 },
+  'joy+sadness':         { v:5.0, a:4.5, h:0.40, s:0.50, ag:0.00, r:0.30, p:0.05, d:0.20 },
+  'joy+anger':           { v:5.5, a:7.0, h:0.50, s:0.00, ag:0.50, r:0.00, p:0.40, d:0.50 },
+  'joy+fear':            { v:6.0, a:7.5, h:0.50, s:0.10, ag:0.10, r:0.00, p:0.35, d:0.50 },
+  'joy+anticipation':    { v:7.0, a:7.0, h:0.70, s:0.00, ag:0.10, r:0.00, p:0.45, d:0.60 },
+  'joy+calm':            { v:7.0, a:4.0, h:0.60, s:0.00, ag:0.00, r:0.50, p:0.15, d:0.30 },
+  'calm+sadness':        { v:4.0, a:2.5, h:0.10, s:0.55, ag:0.00, r:0.65, p:0.00, d:0.10 },
+  'calm+anger':          { v:3.5, a:5.0, h:0.00, s:0.10, ag:0.55, r:0.40, p:0.00, d:0.20 },
+  'calm+fear':           { v:3.0, a:5.0, h:0.00, s:0.30, ag:0.10, r:0.45, p:0.00, d:0.10 },
+  'calm+anticipation':   { v:6.0, a:4.5, h:0.30, s:0.00, ag:0.00, r:0.55, p:0.10, d:0.20 },
+  'sadness+anger':       { v:2.0, a:6.0, h:0.00, s:0.50, ag:0.70, r:0.00, p:0.00, d:0.10 },
+  'sadness+fear':        { v:2.0, a:5.0, h:0.00, s:0.70, ag:0.10, r:0.10, p:0.00, d:0.05 },
+  'sadness+anticipation':{ v:3.5, a:4.0, h:0.10, s:0.60, ag:0.00, r:0.20, p:0.00, d:0.10 },
+  'anger+fear':          { v:2.0, a:8.0, h:0.00, s:0.30, ag:0.70, r:0.00, p:0.00, d:0.20 },
+  'anger+anticipation':  { v:4.0, a:7.5, h:0.20, s:0.00, ag:0.60, r:0.00, p:0.20, d:0.35 },
+  'fear+anticipation':   { v:3.5, a:7.0, h:0.10, s:0.35, ag:0.20, r:0.00, p:0.10, d:0.20 },
+};
 
-document.getElementById('find-music-btn').addEventListener('click', async () => {
-  const emotionText = state.path.map(p => p.label).join(' → ');
-  const lang = currentLang;
-  const btn = document.getElementById('find-music-btn');
+// Map displayed label (zh or en) → profile key
+const LABEL_TO_KEY = {
+  // EN core
+  'joy':'joy','calm':'calm','sadness':'sadness','anger':'anger',
+  'fear':'fear','anticipation':'anticipation',
+  // EN blends
+  'bittersweet':'joy+sadness','fierce joy':'joy+anger','excitement':'joy+fear',
+  'enthusiasm':'joy+anticipation','contentment':'joy+calm','melancholy':'calm+sadness',
+  'resolve':'calm+anger','apprehension':'calm+fear','hope':'calm+anticipation',
+  'anguish':'sadness+anger','despair':'sadness+fear','longing':'sadness+anticipation',
+  'panic':'anger+fear','determination':'anger+anticipation','dread':'fear+anticipation',
+  // ZH core
+  '喜悅':'joy','平靜':'calm','悲傷':'sadness','憤怒':'anger','恐懼':'fear','期待':'anticipation',
+  // ZH blends
+  '苦樂交織':'joy+sadness','熾烈歡欣':'joy+anger','亢奮激動':'joy+fear',
+  '滿腔熱忱':'joy+anticipation','恬然知足':'joy+calm','淡淡憂愁':'calm+sadness',
+  '沉著堅定':'calm+anger','隱隱不安':'calm+fear','靜待希望':'calm+anticipation',
+  '痛苦煎熬':'sadness+anger','深陷絕望':'sadness+fear','悠悠思念':'sadness+anticipation',
+  '驚慌失措':'anger+fear','破釜沉舟':'anger+anticipation','憂懼難安':'fear+anticipation',
+};
+
+function getEmotionKey(pathLabels) {
+  const first = (pathLabels[0] || '').trim().toLowerCase();
+  return LABEL_TO_KEY[first] || LABEL_TO_KEY[(pathLabels[0] || '').trim()] || 'joy';
+}
+
+function findTopSongs(emotionKey, topK) {
+  const songs = window.__TIMBRE_SONGS__;
+  if (!songs || !songs.length) return [];
+  const p = EMOTION_PROFILES[emotionKey] || EMOTION_PROFILES['joy'];
+  const scored = songs.map(s => {
+    const vd = (s.v - p.v) / 9, ad = (s.a - p.a) / 9;
+    const dist = Math.sqrt(vd*vd + ad*ad);
+    const mood = s.h*p.h + s.s*p.s + s.ag*p.ag + s.r*p.r + s.p*p.p + s.d*(p.d||0);
+    return { title: s.t, score: mood - dist * 1.5 };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, topK);
+}
+
+function renderMusicResults(songs, lang) {
+  const header     = lang === 'zh' ? '🎵 推薦參考音樂'   : '🎵 Recommended Reference Tracks';
+  const searchLbl  = lang === 'zh' ? '在 YouTube 搜尋'  : 'Search on YouTube';
+  if (!songs.length) {
+    return `<div style="color:rgba(232,228,240,0.4);text-align:center;padding:40px;
+            font-family:'Outfit',sans-serif;">No matching songs found.</div>`;
+  }
+  let html = `<div style="font-family:'Outfit',sans-serif;color:#e8e4f0;padding:8px;">
+    <h3 style="margin:0 0 16px 0;font-size:15px;color:rgba(232,228,240,0.6);
+               letter-spacing:0.08em;font-weight:400;">${header}</h3>`;
+  songs.forEach((s, i) => {
+    const ytUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(s.title);
+    html += `<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);
+                  border-radius:10px;padding:14px 16px;margin:8px 0;">
+      <div style="font-size:14px;font-weight:500;margin-bottom:10px;line-height:1.4;">${i+1}. ${s.title}</div>
+      <a href="${ytUrl}" target="_blank" rel="noopener"
+         style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;
+                background:rgba(255,65,54,0.12);border:1px solid rgba(255,65,54,0.3);
+                border-radius:6px;color:#ff6b6b;text-decoration:none;font-size:12px;
+                letter-spacing:0.04em;">▶ ${searchLbl}</a>
+    </div>`;
+  });
+  html += '</div>';
+  return html;
+}
+
+document.getElementById('find-music-btn').addEventListener('click', () => {
+  const pathLabels = state.path.map(p => p.label);
+  const lang       = currentLang;
+  const btn        = document.getElementById('find-music-btn');
   const resultsDiv = document.getElementById('music-results');
 
-  btn.textContent = '⏳ Searching...';
+  btn.textContent = lang === 'zh' ? '⏳ 搜尋中…' : '⏳ Searching…';
   btn.disabled = true;
   resultsDiv.style.display = 'block';
-  resultsDiv.innerHTML = `
-    <div style="text-align:center; color:rgba(232,228,240,0.5); padding:40px 20px;
-                font-family:'Outfit',sans-serif; font-size:13px; letter-spacing:0.08em;">
-      Mapping your constellation to the music library…
-    </div>`;
 
   try {
-    // POST to Gradio's named endpoint (defined in app.py with api_name="recommend_client")
-    const postResp = await fetch(`${GRADIO_API_ROOT}/call/recommend_client`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: [emotionText, lang] })
-    });
-
-    if (!postResp.ok) throw new Error(`API error ${postResp.status}`);
-    const { event_id } = await postResp.json();
-
-    // Stream results via SSE
-    const es = new EventSource(`${GRADIO_API_ROOT}/call/recommend_client/${event_id}`);
-
-    es.addEventListener('complete', (e) => {
-      try {
-        const result = JSON.parse(e.data);
-        resultsDiv.innerHTML = result[0];
-      } catch {
-        resultsDiv.innerHTML = '<div style="color:#ef5350;padding:20px;font-family:Outfit,sans-serif;">Could not parse results.</div>';
-      }
-      es.close();
-    });
-
-    es.onerror = () => {
-      resultsDiv.innerHTML = '<div style="color:#ef5350;padding:20px;font-family:Outfit,sans-serif;text-align:center;">Could not reach the music engine. Try the Text Search tab.</div>';
-      es.close();
-    };
-
+    const key   = getEmotionKey(pathLabels);
+    const songs = findTopSongs(key, 3);
+    resultsDiv.innerHTML = renderMusicResults(songs, lang);
   } catch (err) {
-    resultsDiv.innerHTML = `<div style="color:#ef5350;padding:20px;font-family:Outfit,sans-serif;text-align:center;">Error: ${err.message}<br><small>Use the Text Search tab as an alternative.</small></div>`;
+    resultsDiv.innerHTML = `<div style="color:#ef5350;padding:20px;font-family:'Outfit',sans-serif;
+      text-align:center;">Error: ${err.message}</div>`;
   } finally {
     btn.textContent = lang === 'zh' ? '🎵 找參考音樂' : '🎵 Find Reference Music';
     btn.disabled = false;

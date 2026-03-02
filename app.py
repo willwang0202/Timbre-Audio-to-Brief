@@ -7,19 +7,46 @@ import html as html_lib
 import pandas as pd
 
 # ── Load Emotion Explorer HTML at startup ───────────────────
+import json as _json
+
 _EMOTION_UI_SRCDOC = ""
 try:
     _html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "emotion_ui.html")
     with open(_html_path, "r", encoding="utf-8") as _f:
         _raw = _f.read()
-    # Escape only & and " — sufficient for a double-quoted HTML attribute
-    _EMOTION_UI_SRCDOC = _raw.replace("&", "&amp;").replace('"', "&quot;")
-    print(f"[Timbre] emotion_ui.html loaded ({len(_raw):,} chars)")
+    # Song library will be injected after song_library is loaded (see below)
+    print(f"[Timbre] emotion_ui.html read ({len(_raw):,} chars)")
 except Exception as _e:
     print(f"[Timbre] WARNING: Could not load emotion_ui.html: {_e}")
 from download_models import ensure_models
 ensure_models()  # 確保模型已下載（HF Spaces 首次啟動時）
 from recommend_v2 import recommend, song_library, song_features
+
+# ── Inject song library into Emotion Explorer HTML ──────────
+if _raw:
+    _songs_compact = [
+        {
+            "t":  str(r["title"]),
+            "v":  round(float(r["valence"]),    2),
+            "a":  round(float(r["arousal"]),    2),
+            "h":  round(float(r["mood_happy"]),      3),
+            "s":  round(float(r["mood_sad"]),        3),
+            "ag": round(float(r["mood_aggressive"]), 3),
+            "r":  round(float(r["mood_relaxed"]),    3),
+            "p":  round(float(r["mood_party"]),      3),
+            "d":  round(float(r["danceability"]),    3),
+        }
+        for _, r in song_library.iterrows()
+    ]
+    _song_script = (
+        "<script>window.__TIMBRE_SONGS__="
+        + _json.dumps(_songs_compact, ensure_ascii=True, separators=(",", ":"))
+        + ";</script>"
+    )
+    _raw_injected = _raw.replace("</head>", _song_script + "</head>", 1)
+    _EMOTION_UI_SRCDOC = _raw_injected.replace("&", "&amp;").replace('"', "&quot;")
+    print(f"[Timbre] Injected {len(_songs_compact)} songs into srcdoc ({len(_EMOTION_UI_SRCDOC):,} chars)")
+
 
 def get_local_audio_path(filename):
     """取得本地音檔路徑（如果存在的話）"""
