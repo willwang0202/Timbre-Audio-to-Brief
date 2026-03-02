@@ -3,7 +3,20 @@ import urllib.parse
 import urllib.request
 import re
 import os
+import html as html_lib
 import pandas as pd
+
+# ── Load Emotion Explorer HTML at startup ───────────────────
+_EMOTION_UI_SRCDOC = ""
+try:
+    _html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "emotion_ui.html")
+    with open(_html_path, "r", encoding="utf-8") as _f:
+        _raw = _f.read()
+    # Escape only & and " — sufficient for a double-quoted HTML attribute
+    _EMOTION_UI_SRCDOC = _raw.replace("&", "&amp;").replace('"', "&quot;")
+    print(f"[Timbre] emotion_ui.html loaded ({len(_raw):,} chars)")
+except Exception as _e:
+    print(f"[Timbre] WARNING: Could not load emotion_ui.html: {_e}")
 from download_models import ensure_models
 ensure_models()  # 確保模型已下載（HF Spaces 首次啟動時）
 from recommend_v2 import recommend, song_library, song_features
@@ -453,13 +466,18 @@ with gr.Blocks(title="Timbre Audio-to-Brief Engine") as demo:
 
         # ── Tab 1: Emotion Explorer (interactive bubble UI) ──────────
         with gr.Tab("🌌 Emotion Explorer"):
-            gr.HTML("""
-            <iframe
-              src="/emotion-ui"
-              style="width:100%; height:88vh; border:none; border-radius:10px; display:block;"
-              title="Emotion Explorer"
-            ></iframe>
-            """)
+            if _EMOTION_UI_SRCDOC:
+                gr.HTML(
+                    f'<iframe srcdoc="{_EMOTION_UI_SRCDOC}"'
+                    ' sandbox="allow-scripts allow-same-origin allow-popups"'
+                    ' style="width:100%; height:88vh; border:none; border-radius:10px; display:block;"'
+                    ' title="Emotion Explorer"></iframe>'
+                )
+            else:
+                gr.HTML(
+                    '<p style="color:#ccc; text-align:center; padding:40px;">'
+                    '⚠️ Emotion Explorer could not be loaded. Please use the 📝 Text Search tab.</p>'
+                )
 
         # ── Tab 2: Text Search (original text-based interface) ───────
         with gr.Tab("📝 Text Search"):
@@ -528,16 +546,6 @@ with gr.Blocks(title="Timbre Audio-to-Brief Engine") as demo:
                 outputs=outputs,
                 api_name="recommend_musician",
             )
-
-
-# ── Serve emotion_ui.html at /emotion-ui ────────────────────
-from fastapi.responses import HTMLResponse
-
-@demo.app.get("/emotion-ui", response_class=HTMLResponse)
-async def serve_emotion_ui():
-    """Serves the standalone Emotion Explorer HTML at /emotion-ui."""
-    with open("emotion_ui.html", "r", encoding="utf-8") as f:
-        return f.read()
 
 
 demo.launch(server_name="0.0.0.0", server_port=7860, allowed_paths=["songs", "../songs"])
