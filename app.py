@@ -36,7 +36,7 @@ if _raw:
             "p":  round(float(r["mood_party"]),      3),
             "d":  round(float(r["danceability"]),    3),
         }
-        for _, r in song_library.iterrows()
+        for _, r in song_features.iterrows()
     ]
     _song_script = (
         "<script>window.__TIMBRE_SONGS__="
