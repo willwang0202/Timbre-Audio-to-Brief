@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>情緒星圖</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Outfit:wght@200;300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #07080F;
+    --surface: rgba(255,255,255,0.03);
+    --border: rgba(255,255,255,0.07);
+    --text: #E8E4F0;
+    --muted: rgba(232,228,240,0.45);
+    --radius-sm: 8px;
+  }
+
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+  }
+
+  /* ── NEBULA CANVAS ── */
+  #nebula {
+    position: fixed; inset: 0; z-index: 0;
+    pointer-events: none;
+  }
+
+  /* ── STAGE ── */
+  #stage {
+    position: fixed; inset: 0; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  #bubble-field {
+    position: relative;
+    width: 100vw; height: 100vh;
+  }
+
+  /* ── BUBBLES ── */
+  .bubble {
+    position: absolute;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    user-select: none;
+    transition: opacity 0.4s ease, filter 0.3s ease;
+    transform: translate(-50%, -50%);
+    will-change: transform;
+  }
+
+  .bubble.ghost {
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+
+  .bubble.alive {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.34,1.56,0.64,1);
+  }
+
+  .bubble:hover { filter: brightness(1.25); }
+  .bubble.selected { outline: 2px solid rgba(255,255,255,0.5); outline-offset: 3px; }
+  .bubble.dimmed { opacity: 0.3; pointer-events: none; }
+
+  .bubble-inner {
+    width: 100%; height: 100%;
+    border-radius: 50%;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .bubble-inner::before {
+    content: '';
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.22) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .bubble-label {
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 400;
+    line-height: 1.15;
+    letter-spacing: 0.01em;
+    color: #fff;
+    text-shadow: 0 1px 8px rgba(0,0,0,0.6);
+    pointer-events: none;
+  }
+
+  .bubble-sub {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 300;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.65);
+    margin-top: 2px;
+    pointer-events: none;
+  }
+
+  /* ── HISTORY TRAIL ── */
+  #history-trail {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+    z-index: 20;
+    display: flex; gap: 12px; align-items: center;
+    pointer-events: none;
+  }
+
+  .trail-node {
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .trail-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    box-shadow: 0 0 8px currentColor;
+  }
+
+  .trail-label {
+    font-family: 'Outfit', sans-serif;
+    font-size: 11px; font-weight: 300;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .trail-arrow {
+    color: var(--muted);
+    font-size: 10px;
+    opacity: 0.5;
+  }
+
+  /* ── LAYER TITLE ── */
+  #layer-title {
+    position: fixed; top: 36px; left: 50%; transform: translateX(-50%);
+    z-index: 20;
+    text-align: center;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+
+  #layer-title .layer-num {
+    font-family: 'Outfit', sans-serif;
+    font-size: 10px; font-weight: 300;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  #layer-title .layer-question {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 22px; font-style: italic;
+    font-weight: 300;
+    color: var(--text);
+    letter-spacing: 0.02em;
+  }
+
+  /* ── BLEND BUTTON ── */
+  #blend-btn {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    z-index: 25;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: var(--text);
+    padding: 10px 28px;
+    border-radius: 40px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 12px; font-weight: 300;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    display: none;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+  }
+
+  #blend-btn:hover {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.3);
+  }
+
+  /* ── CONSTELLATION PANEL ── */
+  #constellation-panel {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(7,8,15,0.95);
+    backdrop-filter: blur(20px);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 40px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.8s ease;
+  }
+
+  #constellation-panel.visible {
+    opacity: 1; pointer-events: all;
+  }
+
+  .const-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 11px; font-weight: 400;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .const-headline {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: clamp(28px, 4vw, 46px);
+    font-weight: 300; font-style: italic;
+    color: var(--text);
+    margin-bottom: 48px;
+    letter-spacing: 0.02em;
+  }
+
+  .const-map {
+    display: flex; align-items: center; gap: 0;
+    margin-bottom: 52px;
+    flex-wrap: wrap; justify-content: center;
+  }
+
+  .const-node {
+    display: flex; align-items: center; gap: 0;
+  }
+
+  .const-chip {
+    display: flex; flex-direction: column;
+    align-items: center; gap: 6px;
+  }
+
+  .const-dot {
+    width: 48px; height: 48px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+
+  .const-dot::after {
+    content: '';
+    position: absolute; inset: -4px;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    opacity: 0.3;
+  }
+
+  .const-chip-label {
+    font-family: 'Outfit', sans-serif;
+    font-size: 10px; font-weight: 300;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    max-width: 80px; text-align: center;
+    line-height: 1.3;
+  }
+
+  .const-chip-value {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 13px; font-weight: 400;
+    color: var(--text);
+    max-width: 90px; text-align: center;
+    line-height: 1.25;
+  }
+
+  .const-line {
+    width: 40px; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    margin: 0 8px;
+    flex-shrink: 0;
+    align-self: flex-start;
+    margin-top: 24px;
+  }
+
+  .const-actions {
+    display: flex; gap: 16px;
+  }
+
+  .btn-primary {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.18);
+    color: var(--text);
+    padding: 12px 36px;
+    border-radius: 40px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 12px; font-weight: 300;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+  }
+
+  .btn-primary:hover {
+    background: rgba(255,255,255,0.14);
+    border-color: rgba(255,255,255,0.3);
+    transform: translateY(-1px);
+  }
+
+  /* ── CANVAS constellation SVG ── */
+  #const-svg {
+    position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  }
+
+  /* ── INSTRUCTION ── */
+  #instruction {
+    position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+    z-index: 18;
+    font-family: 'Outfit', sans-serif;
+    font-size: 11px; font-weight: 300;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    opacity: 1;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  /* ── RESET BTN ── */
+  #reset-btn {
+    position: fixed; top: 30px; right: 30px;
+    z-index: 30;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 7px 16px;
+    border-radius: 20px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 10px; font-weight: 300;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: none;
+  }
+
+  #reset-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+
+  /* ── LANG TOGGLE ── */
+  #lang-btn {
+    position: fixed; top: 30px; left: 30px;
+    z-index: 30;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 7px 14px;
+    border-radius: 20px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 11px; font-weight: 300;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex; align-items: center; gap: 6px;
+  }
+  #lang-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+  #lang-btn .lang-active { color: var(--text); font-weight: 500; }
+  #lang-btn .lang-sep { opacity: 0.3; font-weight: 200; }
+  #lang-btn .lang-inactive { opacity: 0.45; }
+
+  /* Ripple on click */
+  .ripple {
+    position: absolute; border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    transform: translate(-50%,-50%) scale(0);
+    animation: rippleAnim 0.6s ease-out forwards;
+    pointer-events: none;
+    z-index: 10;
+  }
+  @keyframes rippleAnim {
+    to { transform: translate(-50%,-50%) scale(4); opacity: 0; }
+  }
+
+  /* Pulse anim for selected bubbles */
+  @keyframes pulse {
+    0%, 100% { box-shadow: var(--pulse-shadow); }
+    50% { box-shadow: var(--pulse-shadow-alt); }
+  }
+
+  .pulsing .bubble-inner {
+    animation: pulse 2.5s ease-in-out infinite;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="nebula"></canvas>
+
+<div id="stage">
+  <div id="bubble-field"></div>
+</div>
+
+<svg id="const-svg"></svg>
+
+<div id="layer-title">
+  <div class="layer-num" id="layer-num">第一層，共四層</div>
+  <div class="layer-question" id="layer-question">你現在感受到什麼？</div>
+</div>
+
+<div id="history-trail"></div>
+<div id="instruction">點擊泡泡開始探索</div>
+<div id="blend-btn">✦ 融合這些情緒</div>
+<button id="reset-btn">重新開始</button>
+<button id="lang-btn"><span class="lang-active" id="lang-zh">中</span><span class="lang-sep">/</span><span class="lang-inactive" id="lang-en">EN</span></button>
+
+<div id="constellation-panel">
+  <div class="const-title">你的情緒星圖</div>
+  <div class="const-headline" id="const-headline">你內心世界的肖像</div>
+  <div class="const-map" id="const-map"></div>
+  <div class="const-actions">
+    <button class="btn-primary" id="find-music-btn" style="display:none; background:rgba(245,197,24,0.10); border-color:rgba(245,197,24,0.35); color:#F5C518;">🎵 Find Reference Music</button>
+    <button class="btn-primary" id="save-btn">儲存至日記</button>
+    <button class="btn-primary" id="restart-btn">再次探索</button>
+  </div>
+  <div id="music-results" style="display:none; margin-top:28px; max-width:720px; width:100%; max-height:55vh; overflow-y:auto; border-radius:12px; text-align:left;"></div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════
+//  BILINGUAL DATA
+// ══════════════════════════════════════════════════
+
+const LANG_DATA = {
+  zh: {
+    emotions: {
+      joy:          { label: '喜悅', nuances: ['狂喜','雀躍','感恩','光芒萬丈','意氣風發','愉快'], somatics: ['胸口暖意','身體輕盈','四肢酥麻','能量湧升','心扉敞開','生命力沸騰'], urges: ['渴望連結','自由表達','創造事物','舞動身體','與人分享','向外擴展'] },
+      calm:         { label: '平靜', nuances: ['安詳','踏實','祥和','內心平衡','寧靜','澄澈'], somatics: ['四肢沉重','深呼吸舒緩','胸口靜止','肌肉柔軟','腳踩大地','悠長吐息'], urges: ['深度休憩','靜靜觀察','活在當下','化繁為簡','輕柔退隱','滋養自己'] },
+      sadness:      { label: '悲傷', nuances: ['哀慟','思念','孤獨','失望','心碎','惆悵'], somatics: ['胸口沉重','喉嚨緊繃','胃部下沉','眼皮沉重','心痛隱隱','腹部空洞'], urges: ['向內收縮','尋求慰藉','哭泣釋放','獨自退隱','渴望獨處','被人懷抱'] },
+      anger:        { label: '憤怒', nuances: ['暴怒','沮喪','怨恨','憤憤不平','煩躁','激怒'], somatics: ['臉部發熱','下巴緊繃','雙拳握緊','頭部脹壓','胸中火燒','脊背僵硬'], urges: ['立即行動','劃定界線','正面對峙','激烈運動','大聲呼喊','保護自己'] },
+      fear:         { label: '恐懼', nuances: ['焦慮','驚恐','畏懼','脆弱','不安','驚慌'], somatics: ['四肢冰冷','胸口緊縮','心跳加速','呼吸急促','胃部打結','全身僵住'], urges: ['原地凍結','逃離現場','躲藏起來','尋求安全','渴望reassurance','蜷縮備戰'] },
+      anticipation: { label: '期待', nuances: ['充滿希望','好奇探索','迫不及待','坐立難安','緊張興奮','深深渴望'], somatics: ['腹中蝴蝶','胸口繃緊','脈搏加快','躁動不安','皮膚微刺','身體前傾'], urges: ['預先規劃','深入探索','踏出第一步','腦海想像','告訴他人','積極準備'] },
+    },
+    blends: {
+      'joy+sadness':         '苦樂交織', 'joy+anger':    '熾烈歡欣', 'joy+fear':           '亢奮激動',
+      'joy+anticipation':    '滿腔熱忱', 'joy+calm':     '恬然知足', 'calm+sadness':       '淡淡憂愁',
+      'calm+anger':          '沉著堅定', 'calm+fear':    '隱隱不安', 'calm+anticipation':  '靜待希望',
+      'sadness+anger':       '痛苦煎熬', 'sadness+fear': '深陷絕望', 'sadness+anticipation':'悠悠思念',
+      'anger+fear':          '驚慌失措', 'anger+anticipation': '破釜沉舟', 'fear+anticipation': '憂懼難安',
+    },
+    layers: [
+      null,
+      { num: '第一層，共四層', question: '你現在感受到什麼？',   hint: '選擇一個情緒，或點選兩個來融合' },
+      { num: '第二層，共四層', question: '哪個詞最貼近你的感受？', hint: '選擇最能共鳴的細膩情緒' },
+      { num: '第三層，共四層', question: '你在哪裡感受到它？',   hint: '感受身體裡的感覺所在' },
+      { num: '第四層，共四層', question: '它想做什麼？',         hint: '選擇那個呼喚你的衝動' },
+    ],
+    layerNames:       ['情緒','細膩','感覺','衝動'],
+    ui: {
+      instruction:    '點擊泡泡開始探索',
+      blendBtn:       '✦ 融合這些情緒',
+      reset:          '重新開始',
+      constTitle:     '你的情緒星圖',
+      constHeadline:  '你內心世界的肖像',
+      saveBtn:        '儲存至日記',
+      saved:          '✓ 已儲存',
+      restartBtn:     '再次探索',
+      blendHint:      (label) => label ? `正在融合為「${label}」` : '以主要情緒繼續',
+      blendBtnLabel:  (label) => label ? `✦ 融合為${label}` : '✦ 以兩者繼續',
+      selectHint:     '再點一次確認，或點選另一個情緒來融合',
+      pageTitle:      '情緒星圖',
+    }
+  },
+  en: {
+    emotions: {
+      joy:          { label: 'Joy',          nuances: ['Ecstatic','Playful','Grateful','Radiant','Triumphant','Amused'],           somatics: ['Warmth in chest','Lightness in body','Tingling in limbs','Energy rising','Openness in heart','Buzzing aliveness'],        urges: ['Seeking Connection','Expressing Freely','Creating Something','Moving & Dancing','Sharing with Others','Expanding Outward'] },
+      calm:         { label: 'Calm',         nuances: ['Serene','Grounded','Peaceful','Centered','Tranquil','Still'],              somatics: ['Heavy limbs','Slow deep breath','Stillness in chest','Soft muscles','Grounded in feet','Long exhale'],                    urges: ['Resting Deeply','Observing Quietly','Being Present','Simplifying','Withdrawing Gently','Nurturing Self'] },
+      sadness:      { label: 'Sadness',      nuances: ['Grief','Longing','Lonely','Disappointed','Heartbroken','Nostalgic'],       somatics: ['Heavy chest','Tight throat','Sinking stomach','Heavy eyes','Ache in heart','Hollow in belly'],                           urges: ['Turning Inward','Seeking Comfort','Crying & Releasing','Withdrawing','Seeking Solitude','Being Held'] },
+      anger:        { label: 'Anger',        nuances: ['Furious','Frustrated','Resentful','Indignant','Irritated','Enraged'],      somatics: ['Heat in face','Tension in jaw','Tight fists','Pressure in head','Fire in chest','Rigid spine'],                          urges: ['Taking Action','Setting Boundaries','Confronting','Moving Intensely','Vocalizing','Protecting'] },
+      fear:         { label: 'Fear',         nuances: ['Anxious','Terrified','Dreading','Vulnerable','Insecure','Panicked'],       somatics: ['Cold extremities','Tight chest','Racing heart','Shallow breath','Knotted stomach','Frozen stillness'],                    urges: ['Freezing Still','Fleeing Away','Hiding','Seeking Safety','Seeking Reassurance','Bracing'] },
+      anticipation: { label: 'Anticipation', nuances: ['Hopeful','Curious','Eager','Impatient','Nervous-Excited','Yearning'],      somatics: ['Flutter in belly','Chest tension','Quickened pulse','Restless body','Tingling skin','Leaning forward'],                     urges: ['Planning Ahead','Researching More','Taking First Step','Visualizing','Telling Someone','Preparing'] },
+    },
+    blends: {
+      'joy+sadness':         'Bittersweet',  'joy+anger':    'Fierce Joy',   'joy+fear':           'Excitement',
+      'joy+anticipation':    'Enthusiasm',   'joy+calm':     'Contentment',  'calm+sadness':       'Melancholy',
+      'calm+anger':          'Resolve',      'calm+fear':    'Apprehension', 'calm+anticipation':  'Hope',
+      'sadness+anger':       'Anguish',      'sadness+fear': 'Despair',      'sadness+anticipation':'Longing',
+      'anger+fear':          'Panic',        'anger+anticipation': 'Determination', 'fear+anticipation': 'Dread',
+    },
+    layers: [
+      null,
+      { num: 'Layer 1 of 4', question: 'What are you feeling right now?', hint: 'Select one — or click two to blend' },
+      { num: 'Layer 2 of 4', question: 'Which word fits best?',           hint: 'Choose the nuance that resonates' },
+      { num: 'Layer 3 of 4', question: 'Where do you feel it?',           hint: 'Locate the sensation in your body' },
+      { num: 'Layer 4 of 4', question: 'What does it want to do?',        hint: 'Choose the urge calling to you' },
+    ],
+    layerNames: ['Emotion','Nuance','Sensation','Urge'],
+    ui: {
+      instruction:   'Click a bubble to begin',
+      blendBtn:      '✦ Blend These Emotions',
+      reset:         'Reset',
+      constTitle:    'Your Emotional Constellation',
+      constHeadline: 'A Portrait of Your Inner State',
+      saveBtn:       'Save to Journal',
+      saved:         '✓ Saved',
+      restartBtn:    'Explore Again',
+      blendHint:     (label) => label ? `Blending into "${label}"` : 'Proceeding with primary emotion',
+      blendBtnLabel: (label) => label ? `✦ Blend into ${label}` : '✦ Continue with Both',
+      selectHint:    'Click another to blend, or click again to continue',
+      pageTitle:     'Emotional Constellation',
+    }
+  }
+};
+
+// Shared color/glow data (language-independent)
+const EMOTION_COLORS = {
+  joy:          { color: '#F5C518', glow: 'rgba(245,197,24,0.55)' },
+  calm:         { color: '#5BA4CF', glow: 'rgba(91,164,207,0.55)' },
+  sadness:      { color: '#7986CB', glow: 'rgba(121,134,203,0.55)' },
+  anger:        { color: '#EF5350', glow: 'rgba(239,83,80,0.55)' },
+  fear:         { color: '#AB47BC', glow: 'rgba(171,71,188,0.55)' },
+  anticipation: { color: '#FF7043', glow: 'rgba(255,112,67,0.55)' },
+};
+
+const BLEND_COLOR = {
+  'joy+sadness':          { color: '#B39DDB', glow: 'rgba(179,157,219,0.55)', base: 'sadness' },
+  'joy+anger':            { color: '#FF8F00', glow: 'rgba(255,143,0,0.55)',   base: 'joy' },
+  'joy+fear':             { color: '#FFEE58', glow: 'rgba(255,238,88,0.55)',  base: 'anticipation' },
+  'joy+anticipation':     { color: '#FFAB40', glow: 'rgba(255,171,64,0.55)', base: 'anticipation' },
+  'joy+calm':             { color: '#81C784', glow: 'rgba(129,199,132,0.55)',base: 'calm' },
+  'calm+sadness':         { color: '#90A4AE', glow: 'rgba(144,164,174,0.55)',base: 'sadness' },
+  'calm+anger':           { color: '#78909C', glow: 'rgba(120,144,156,0.55)',base: 'anger' },
+  'calm+fear':            { color: '#9575CD', glow: 'rgba(149,117,205,0.55)',base: 'fear' },
+  'calm+anticipation':    { color: '#4DB6AC', glow: 'rgba(77,182,172,0.55)', base: 'anticipation' },
+  'sadness+anger':        { color: '#7B1FA2', glow: 'rgba(123,31,162,0.55)', base: 'anger' },
+  'sadness+fear':         { color: '#546E7A', glow: 'rgba(84,110,122,0.55)', base: 'sadness' },
+  'sadness+anticipation': { color: '#8D6E63', glow: 'rgba(141,110,99,0.55)', base: 'sadness' },
+  'anger+fear':           { color: '#D32F2F', glow: 'rgba(211,47,47,0.55)',  base: 'fear' },
+  'anger+anticipation':   { color: '#E65100', glow: 'rgba(230,81,0,0.55)',   base: 'anger' },
+  'fear+anticipation':    { color: '#6A1B9A', glow: 'rgba(106,27,154,0.55)', base: 'fear' },
+};
+
+// ── Active language helpers ──────────────────────
+let currentLang = 'zh';
+function L()       { return LANG_DATA[currentLang]; }
+function EMOTIONS() {
+  const e = L().emotions;
+  const result = {};
+  for (const key of Object.keys(e)) {
+    result[key] = { ...e[key], ...EMOTION_COLORS[key] };
+  }
+  return result;
+}
+function BLEND_MAP() {
+  const result = {};
+  for (const key of Object.keys(BLEND_COLOR)) {
+    result[key] = { label: L().blends[key], ...BLEND_COLOR[key] };
+  }
+  return result;
+}
+function LAYER_META() { return L().layers; }
+
+// ══════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════
+
+let state = {
+  layer: 1,
+  selected1: null,   // first core emotion key
+  selected2: null,   // second core emotion key (for blend)
+  blendResult: null, // { label, color, glow, base }
+  baseEmotion: null, // resolved emotion data
+  path: [],          // [{ layer, label, color }]
+  bubbles: [],
+  animating: false,
+};
+
+// ══════════════════════════════════════════════════
+//  NEBULA BACKGROUND
+// ══════════════════════════════════════════════════
+
+(function initNebula() {
+  const canvas = document.getElementById('nebula');
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    draw();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const W = canvas.width, H = canvas.height;
+    const spots = [
+      { x: W*0.15, y: H*0.2,  r: W*0.35, c: 'rgba(80,40,120,0.08)' },
+      { x: W*0.85, y: H*0.7,  r: W*0.3,  c: 'rgba(20,80,140,0.07)' },
+      { x: W*0.5,  y: H*0.5,  r: W*0.25, c: 'rgba(60,30,100,0.05)' },
+      { x: W*0.7,  y: H*0.15, r: W*0.2,  c: 'rgba(100,50,30,0.06)' },
+      { x: W*0.2,  y: H*0.8,  r: W*0.2,  c: 'rgba(20,100,80,0.05)' },
+    ];
+    spots.forEach(s => {
+      const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r);
+      g.addColorStop(0, s.c);
+      g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    });
+
+    // Subtle star field
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    const seed = 42;
+    for (let i = 0; i < 180; i++) {
+      const x = ((Math.sin(i * 127.1 + seed) * 0.5 + 0.5)) * W;
+      const y = ((Math.sin(i * 311.7 + seed) * 0.5 + 0.5)) * H;
+      const r = Math.sin(i * 91.3) * 0.7 + 0.8;
+      ctx.globalAlpha = 0.1 + Math.sin(i * 47.9) * 0.08;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+})();
+
+// ══════════════════════════════════════════════════
+//  PHYSICS ENGINE
+// ══════════════════════════════════════════════════
+
+class PhysicsBubble {
+  constructor({ id, label, sub, color, glow, radius, cx, cy }) {
+    this.id = id;
+    this.label = label;
+    this.sub = sub || '';
+    this.color = color;
+    this.glow = glow;
+    this.radius = radius;
+    this.x = cx + (Math.random() - 0.5) * 60;
+    this.y = cy + (Math.random() - 0.5) * 60;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.tx = cx; this.ty = cy;
+    this.el = null;
+    this.alive = false;
+    this.selected = false;
+  }
+
+  spawn(field) {
+    const el = document.createElement('div');
+    el.className = 'bubble ghost';
+    el.style.width = this.radius * 2 + 'px';
+    el.style.height = this.radius * 2 + 'px';
+    el.style.left = this.x + 'px';
+    el.style.top = this.y + 'px';
+
+    el.innerHTML = `
+      <div class="bubble-inner" style="
+        background: radial-gradient(circle at 40% 35%, ${lighten(this.color, 0.15)}, ${this.color} 55%, ${darken(this.color, 0.25)});
+        box-shadow: 0 0 30px ${this.glow}, 0 0 8px ${this.glow}, inset 0 0 20px rgba(0,0,0,0.2);
+      ">
+        <span class="bubble-label" style="font-size:${labelSize(this.radius)}px">${this.label}</span>
+        ${this.sub ? `<span class="bubble-sub" style="font-size:${Math.max(7, labelSize(this.radius) - 5)}px">${this.sub}</span>` : ''}
+      </div>`;
+
+    field.appendChild(el);
+    this.el = el;
+
+    el.addEventListener('click', e => {
+      createRipple(el, e);
+      onBubbleClick(this);
+    });
+
+    requestAnimationFrame(() => {
+      el.classList.remove('ghost');
+      el.classList.add('alive');
+    });
+    this.alive = true;
+  }
+
+  remove() {
+    if (!this.el) return;
+    this.el.style.transform = 'translate(-50%,-50%) scale(0)';
+    this.el.style.opacity = '0';
+    setTimeout(() => this.el?.remove(), 500);
+    this.el = null;
+    this.alive = false;
+  }
+
+  setTarget(tx, ty) { this.tx = tx; this.ty = ty; }
+
+  step(others) {
+    const spring = 0.055, damp = 0.82;
+    this.vx += (this.tx - this.x) * spring;
+    this.vy += (this.ty - this.y) * spring;
+    this.vx *= damp; this.vy *= damp;
+    this.x += this.vx; this.y += this.vy;
+
+    // PBD repulsion
+    for (const o of others) {
+      if (o === this || !o.alive) continue;
+      const dx = this.x - o.x, dy = this.y - o.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      const minDist = this.radius + o.radius + 6;
+      if (dist < minDist) {
+        const push = (minDist - dist) / dist * 0.3;
+        this.vx += dx * push; this.vy += dy * push;
+        o.vx -= dx * push;   o.vy -= dy * push;
+      }
+    }
+  }
+
+  render() {
+    if (!this.el) return;
+    this.el.style.left = this.x + 'px';
+    this.el.style.top = this.y + 'px';
+  }
+}
+
+function labelSize(r) {
+  if (r >= 72) return 17;
+  if (r >= 56) return 14;
+  if (r >= 44) return 12;
+  return 10;
+}
+function lighten(hex, amt) { return shiftColor(hex, amt); }
+function darken(hex, amt)  { return shiftColor(hex, -amt); }
+function shiftColor(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = Math.min(255, Math.max(0, (n>>16) + Math.round(amt*255)));
+  let g = Math.min(255, Math.max(0, ((n>>8)&0xFF) + Math.round(amt*255)));
+  let b = Math.min(255, Math.max(0, (n&0xFF) + Math.round(amt*255)));
+  return `#${((1<<24)|(r<<16)|(g<<8)|b).toString(16).slice(1)}`;
+}
+
+// ══════════════════════════════════════════════════
+//  ORBITAL LAYOUT
+// ══════════════════════════════════════════════════
+
+function getOrbitalPositions(count, centerX, centerY, selectedIdx) {
+  // Selected → center, rest → rings
+  const positions = new Array(count);
+  const others = [];
+  for (let i = 0; i < count; i++) {
+    if (i === selectedIdx) { positions[i] = { x: centerX, y: centerY }; }
+    else { others.push(i); }
+  }
+  if (others.length === 0) return positions;
+
+  const r1 = clampRadius(Math.max(120, Math.min(others.length * 28, 175)));
+  const r2 = r1 + 105;
+  const ring1 = Math.min(others.length, 6);
+  const ring2 = others.length - ring1;
+
+  others.forEach((origIdx, j) => {
+    let angle, r;
+    if (j < ring1) {
+      angle = (j / ring1) * Math.PI * 2 - Math.PI / 2;
+      r = r1;
+    } else {
+      const jj = j - ring1;
+      angle = (jj / ring2) * Math.PI * 2 - Math.PI / 2 + Math.PI / ring2;
+      r = r2;
+    }
+    positions[origIdx] = { x: centerX + Math.cos(angle) * r, y: centerY + Math.sin(angle) * r };
+  });
+  return positions;
+}
+
+function getFreePositions(count, centerX, centerY) {
+  const positions = [];
+  if (count === 0) return positions;
+  const r1 = clampRadius(Math.max(130, Math.min(count * 28, 180)));
+  const r2 = r1 + 110;
+  const ring1 = Math.min(count, 6);
+  const ring2 = count - ring1;
+  for (let i = 0; i < count; i++) {
+    let angle, r;
+    if (i < ring1) {
+      angle = (i / ring1) * Math.PI * 2 - Math.PI / 2;
+      r = ring1 === 1 ? 0 : r1;
+    } else {
+      const j = i - ring1;
+      angle = (j / ring2) * Math.PI * 2 - Math.PI / 2 + Math.PI / ring2;
+      r = r2;
+    }
+    positions.push({ x: centerX + Math.cos(angle) * r, y: centerY + Math.sin(angle) * r });
+  }
+  return positions;
+}
+
+function clampRadius(r) { return Math.min(r, Math.min(window.innerWidth, window.innerHeight) * 0.36); }
+
+// ══════════════════════════════════════════════════
+//  ANIMATION LOOP
+// ══════════════════════════════════════════════════
+
+let rafId = null;
+function startLoop() {
+  if (rafId) cancelAnimationFrame(rafId);
+  function tick() {
+    state.bubbles.forEach(b => { if (b.alive) b.step(state.bubbles); });
+    state.bubbles.forEach(b => { if (b.alive) b.render(); });
+    rafId = requestAnimationFrame(tick);
+  }
+  rafId = requestAnimationFrame(tick);
+}
+
+// ══════════════════════════════════════════════════
+//  LAYER RENDERING
+// ══════════════════════════════════════════════════
+
+const field = document.getElementById('bubble-field');
+
+function cx() { return window.innerWidth / 2; }
+function cy() { return window.innerHeight / 2; }
+
+function clearBubbles() {
+  state.bubbles.forEach(b => b.remove());
+  state.bubbles = [];
+}
+
+function setLayerUI(layer) {
+  const meta = LAYER_META()[layer];
+  document.getElementById('layer-num').textContent = meta.num;
+  document.getElementById('layer-question').textContent = meta.question;
+  document.getElementById('instruction').textContent = meta.hint;
+  document.getElementById('reset-btn').style.display = layer > 1 ? 'block' : 'none';
+  document.getElementById('reset-btn').textContent = L().ui.reset;
+}
+
+function buildBubbleRadius(layer) {
+  const base = [0, 72, 60, 54, 52];
+  return base[layer] || 52;
+}
+
+// ── LAYER 1 ──────────────────────────────────────
+function renderLayer1() {
+  state.layer = 1;
+  state.selected1 = null; state.selected2 = null; state.blendResult = null;
+  state.path = [];
+  clearBubbles();
+  setLayerUI(1);
+  document.getElementById('blend-btn').style.display = 'none';
+  updateTrail();
+
+  const keys = Object.keys(EMOTIONS());
+  const positions = getFreePositions(keys.length, cx(), cy());
+  const r = buildBubbleRadius(1);
+
+  keys.forEach((key, i) => {
+    const E = EMOTIONS()[key];
+    const b = new PhysicsBubble({
+      id: key, label: E.label, color: E.color, glow: E.glow, radius: r,
+      cx: positions[i].x, cy: positions[i].y
+    });
+    b.setTarget(positions[i].x, positions[i].y);
+    b.spawn(field);
+    state.bubbles.push(b);
+  });
+}
+
+// ── LAYER 1 CLICK ────────────────────────────────
+function handleLayer1Click(bubble) {
+  const key = bubble.id;
+
+  if (!state.selected1) {
+    state.selected1 = key;
+    bubble.selected = true;
+    bubble.el?.classList.add('selected', 'pulsing');
+    document.getElementById('instruction').textContent = L().ui.selectHint;
+
+    const selIdx = state.bubbles.findIndex(b => b.id === key);
+    const positions = getOrbitalPositions(state.bubbles.length, cx(), cy(), selIdx);
+    state.bubbles.forEach((b, i) => b.setTarget(positions[i].x, positions[i].y));
+
+  } else if (!state.selected2 && key !== state.selected1) {
+    state.selected2 = key;
+    bubble.selected = true;
+    bubble.el?.classList.add('selected', 'pulsing');
+
+    const blendKey = resolveBlendKey(state.selected1, state.selected2);
+    state.blendResult = BLEND_MAP()[blendKey] || null;
+
+    document.getElementById('instruction').textContent = L().ui.blendHint(state.blendResult?.label);
+    document.getElementById('blend-btn').style.display = 'block';
+    document.getElementById('blend-btn').textContent = L().ui.blendBtnLabel(state.blendResult?.label);
+
+  } else if (key === state.selected1 && !state.selected2) {
+    proceedToLayer2Single();
+  }
+}
+
+function resolveBlendKey(a, b) {
+  const pairs = [`${a}+${b}`, `${b}+${a}`];
+  return pairs.find(k => BLEND_MAP()[k]) || `${a}+${b}`;
+}
+
+function proceedToLayer2Single() {
+  const E = EMOTIONS()[state.selected1];
+  state.baseEmotion = E;
+  state.path.push({ layer: 1, label: E.label, color: E.color });
+  setTimeout(() => renderLayer2(E), 300);
+}
+
+function proceedToLayer2Blend() {
+  const blendKey = resolveBlendKey(state.selected1, state.selected2);
+  const blend = BLEND_MAP()[blendKey];
+  const base = EMOTIONS()[blend?.base || state.selected1];
+  state.baseEmotion = base;
+  const label = blend ? blend.label : EMOTIONS()[state.selected1].label;
+  const color = blend ? blend.color : EMOTIONS()[state.selected1].color;
+  state.path.push({ layer: 1, label, color });
+  setTimeout(() => renderLayer2(base), 300);
+}
+
+// ── LAYER 2 ──────────────────────────────────────
+function renderLayer2(emotion) {
+  state.layer = 2;
+  clearBubbles();
+  setLayerUI(2);
+  document.getElementById('blend-btn').style.display = 'none';
+  updateTrail();
+
+  const r = buildBubbleRadius(2);
+  const items = emotion.nuances;
+  const positions = getFreePositions(items.length, cx(), cy());
+
+  items.forEach((label, i) => {
+    const b = new PhysicsBubble({
+      id: 'nuance_' + i, label, color: state.path[0].color,
+      glow: `rgba(${hexToRgb(state.path[0].color)},0.5)`,
+      radius: r, cx: positions[i].x, cy: positions[i].y
+    });
+    b.setTarget(positions[i].x, positions[i].y);
+    b.spawn(field);
+    state.bubbles.push(b);
+  });
+}
+
+// ── LAYER 3 ──────────────────────────────────────
+function renderLayer3() {
+  state.layer = 3;
+  clearBubbles();
+  setLayerUI(3);
+  updateTrail();
+
+  const r = buildBubbleRadius(3);
+  const items = state.baseEmotion.somatics;
+  const positions = getFreePositions(items.length, cx(), cy());
+  const col = state.path[state.path.length - 1]?.color || '#aaa';
+
+  items.forEach((label, i) => {
+    const lighter = lighten(col, 0.08);
+    const b = new PhysicsBubble({
+      id: 'somatic_' + i, label, color: lighter,
+      glow: `rgba(${hexToRgb(lighter)},0.45)`,
+      sub: 'feel it', radius: r, cx: positions[i].x, cy: positions[i].y
+    });
+    b.sub = '';
+    b.setTarget(positions[i].x, positions[i].y);
+    b.spawn(field);
+    state.bubbles.push(b);
+  });
+}
+
+// ── LAYER 4 ──────────────────────────────────────
+function renderLayer4() {
+  state.layer = 4;
+  clearBubbles();
+  setLayerUI(4);
+  updateTrail();
+
+  const r = buildBubbleRadius(4);
+  const items = state.baseEmotion.urges;
+  const positions = getFreePositions(items.length, cx(), cy());
+  const col = state.path[state.path.length - 1]?.color || '#aaa';
+
+  items.forEach((label, i) => {
+    const c = shiftHue(col, i * 12);
+    const b = new PhysicsBubble({
+      id: 'urge_' + i, label, color: c,
+      glow: `rgba(${hexToRgb(c)},0.45)`,
+      radius: r, cx: positions[i].x, cy: positions[i].y
+    });
+    b.setTarget(positions[i].x, positions[i].y);
+    b.spawn(field);
+    state.bubbles.push(b);
+  });
+}
+
+// ══════════════════════════════════════════════════
+//  BUBBLE CLICK HANDLER
+// ══════════════════════════════════════════════════
+
+function onBubbleClick(bubble) {
+  if (state.animating) return;
+
+  if (state.layer === 1) {
+    handleLayer1Click(bubble);
+    return;
+  }
+
+  // Flash to center, then advance
+  state.animating = true;
+  bubble.el?.classList.add('selected');
+  const selfColor = bubble.color;
+  const selfLabel = bubble.label;
+
+  // Move clicked to center
+  const selIdx = state.bubbles.findIndex(b => b.id === bubble.id);
+  const positions = getOrbitalPositions(state.bubbles.length, cx(), cy(), selIdx);
+  state.bubbles.forEach((b, i) => {
+    b.setTarget(positions[i].x, positions[i].y);
+    if (b.id !== bubble.id) {
+      setTimeout(() => { b.el && (b.el.style.opacity = '0'); }, 150);
+    }
+  });
+
+  state.path.push({ layer: state.layer, label: selfLabel, color: selfColor });
+  updateTrail();
+
+  setTimeout(() => {
+    state.animating = false;
+    if (state.layer === 2) { renderLayer3(); }
+    else if (state.layer === 3) { renderLayer4(); }
+    else if (state.layer === 4) { showConstellation(); }
+  }, 600);
+}
+
+// ══════════════════════════════════════════════════
+//  HISTORY TRAIL
+// ══════════════════════════════════════════════════
+
+function updateTrail() {
+  const trail = document.getElementById('history-trail');
+  trail.innerHTML = '';
+  state.path.forEach((p, i) => {
+    if (i > 0) {
+      const arrow = document.createElement('span');
+      arrow.className = 'trail-arrow';
+      arrow.textContent = '→';
+      trail.appendChild(arrow);
+    }
+    const node = document.createElement('div');
+    node.className = 'trail-node';
+    node.innerHTML = `
+      <div class="trail-dot" style="background:${p.color}; color:${p.color};"></div>
+      <span class="trail-label">${p.label}</span>`;
+    trail.appendChild(node);
+  });
+}
+
+// ══════════════════════════════════════════════════
+//  CONSTELLATION END SCREEN
+// ══════════════════════════════════════════════════
+
+function showConstellation() {
+  clearBubbles();
+  document.getElementById('layer-title').style.opacity = '0';
+  document.getElementById('history-trail').style.opacity = '0';
+  document.getElementById('instruction').style.opacity = '0';
+  document.getElementById('reset-btn').style.display = 'none';
+
+  const panel = document.getElementById('constellation-panel');
+  const map = document.getElementById('const-map');
+  map.innerHTML = '';
+
+  const layerNames = L().layerNames;
+  panel.querySelector('.const-title').textContent = L().ui.constTitle;
+  if (state.path.length < 4) {
+    document.getElementById('const-headline').textContent = L().ui.constHeadline;
+  }
+  document.getElementById('save-btn').textContent = L().ui.saveBtn;
+  document.getElementById('restart-btn').textContent = L().ui.restartBtn;
+
+  state.path.forEach((p, i) => {
+    if (i > 0) {
+      const line = document.createElement('div');
+      line.className = 'const-line';
+      map.appendChild(line);
+    }
+
+    const node = document.createElement('div');
+    node.className = 'const-node';
+
+    const chip = document.createElement('div');
+    chip.className = 'const-chip';
+    chip.style.setProperty('--chip-color', p.color);
+
+    chip.innerHTML = `
+      <div class="const-dot" style="background:radial-gradient(circle at 35% 30%, ${lighten(p.color,0.2)}, ${p.color}); box-shadow: 0 0 20px ${p.color}44, 0 0 6px ${p.color}88; color:${p.color};">
+        <span style="font-size:11px; font-family:'Cormorant Garamond',serif; color:#fff; font-weight:300;">${i+1}</span>
+      </div>
+      <div class="const-chip-label">${layerNames[i]}</div>
+      <div class="const-chip-value" style="color:${lighten(p.color,0.15)}">${p.label}</div>`;
+
+    node.appendChild(chip);
+    map.appendChild(node);
+  });
+
+  // Headline
+  if (state.path.length >= 4) {
+    document.getElementById('const-headline').textContent =
+      `${state.path[0].label} → ${state.path[3].label}`;
+  }
+
+  panel.classList.add('visible');
+
+  // Show Timbre bridge button
+  const findBtn = document.getElementById('find-music-btn');
+  findBtn.style.display = 'inline-block';
+  findBtn.textContent = currentLang === 'zh' ? '🎵 找參考音樂' : '🎵 Find Reference Music';
+  document.getElementById('music-results').style.display = 'none';
+  document.getElementById('music-results').innerHTML = '';
+
+  // Animate nodes in
+  const chips = map.querySelectorAll('.const-chip');
+  chips.forEach((chip, i) => {
+    chip.style.opacity = '0';
+    chip.style.transform = 'translateY(16px)';
+    chip.style.transition = `all 0.6s cubic-bezier(0.34,1.56,0.64,1) ${i * 0.12 + 0.3}s`;
+    requestAnimationFrame(() => {
+      chip.style.opacity = '1';
+      chip.style.transform = 'translateY(0)';
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════
+//  UTILITIES
+// ══════════════════════════════════════════════════
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.replace('#',''), 16);
+  return `${(n>>16)&255},${(n>>8)&255},${n&255}`;
+}
+
+function shiftHue(hex, deg) {
+  const n = parseInt(hex.replace('#',''), 16);
+  let [r, g, b] = [(n>>16)&255, (n>>8)&255, n&255];
+  let [h, s, l] = rgbToHsl(r, g, b);
+  h = (h + deg / 360 + 1) % 1;
+  [r, g, b] = hslToRgb(h, s, l);
+  return `#${((1<<24)|(r<<16)|(g<<8)|b).toString(16).slice(1)}`;
+}
+
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s, l = (max + min) / 2;
+  if (max === min) { h = s = 0; }
+  else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+      case g: h = ((b - r) / d + 2) / 6; break;
+      case b: h = ((r - g) / d + 4) / 6; break;
+    }
+  }
+  return [h, s, l];
+}
+
+function hslToRgb(h, s, l) {
+  let r, g, b;
+  if (s === 0) { r = g = b = l; }
+  else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t++; if (t > 1) t--;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
+function createRipple(el, e) {
+  const rect = el.getBoundingClientRect();
+  const ripple = document.createElement('div');
+  ripple.className = 'ripple';
+  ripple.style.left = (e.clientX - rect.left) + 'px';
+  ripple.style.top = (e.clientY - rect.top) + 'px';
+  ripple.style.width = ripple.style.height = (el.offsetWidth * 0.6) + 'px';
+  el.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 700);
+}
+
+// ══════════════════════════════════════════════════
+//  EVENT WIRING
+// ══════════════════════════════════════════════════
+
+document.getElementById('blend-btn').addEventListener('click', () => {
+  if (state.selected1 && state.selected2) {
+    proceedToLayer2Blend();
+  } else if (state.selected1) {
+    proceedToLayer2Single();
+  }
+});
+
+document.getElementById('reset-btn').addEventListener('click', () => {
+  document.getElementById('layer-title').style.opacity = '1';
+  document.getElementById('history-trail').style.opacity = '1';
+  document.getElementById('instruction').style.opacity = '1';
+  document.getElementById('constellation-panel').classList.remove('visible');
+  document.getElementById('find-music-btn').style.display = 'none';
+  document.getElementById('music-results').style.display = 'none';
+  document.getElementById('music-results').innerHTML = '';
+  state.animating = false;
+  renderLayer1();
+});
+
+document.getElementById('restart-btn').addEventListener('click', () => {
+  document.getElementById('constellation-panel').classList.remove('visible');
+  document.getElementById('layer-title').style.opacity = '1';
+  document.getElementById('history-trail').style.opacity = '1';
+  document.getElementById('instruction').style.opacity = '1';
+  document.getElementById('find-music-btn').style.display = 'none';
+  document.getElementById('music-results').style.display = 'none';
+  document.getElementById('music-results').innerHTML = '';
+  state.animating = false;
+  renderLayer1();
+});
+
+document.getElementById('save-btn').addEventListener('click', () => {
+  const entry = state.path.map(p => p.label).join(' → ');
+  const time = new Date().toLocaleString();
+  const saved = JSON.parse(localStorage.getItem('ec_journal') || '[]');
+  saved.unshift({ time, entry, colors: state.path.map(p => p.color) });
+  localStorage.setItem('ec_journal', JSON.stringify(saved.slice(0, 50)));
+
+  const btn = document.getElementById('save-btn');
+  btn.textContent = L().ui.saved;
+  btn.style.borderColor = '#4CAF50';
+  setTimeout(() => {
+    btn.textContent = L().ui.saveBtn;
+    btn.style.borderColor = '';
+  }, 2000);
+});
+
+document.getElementById('lang-btn').addEventListener('click', () => {
+  switchLang(currentLang === 'zh' ? 'en' : 'zh');
+});
+
+function switchLang(lang) {
+  currentLang = lang;
+
+  // Update toggle button labels
+  const zhEl = document.getElementById('lang-zh');
+  const enEl = document.getElementById('lang-en');
+  if (lang === 'zh') {
+    zhEl.className = 'lang-active';
+    enEl.className = 'lang-inactive';
+  } else {
+    enEl.className = 'lang-active';
+    zhEl.className = 'lang-inactive';
+  }
+
+  // Update page title
+  document.title = L().ui.pageTitle;
+
+  // Update static UI strings
+  document.getElementById('instruction').textContent = L().ui.instruction;
+  document.getElementById('blend-btn').textContent = L().ui.blendBtn;
+  document.getElementById('reset-btn').textContent = L().ui.reset;
+
+  // Re-render current layer to swap bubble labels
+  const savedLayer = state.layer;
+  const savedPath = state.path.slice();
+  const savedBase = state.baseEmotion;
+  const savedSel1 = state.selected1;
+  const savedSel2 = state.selected2;
+  const savedBlend = state.blendResult;
+
+  if (savedLayer === 1) {
+    renderLayer1();
+    // Restore selections if any were made
+    if (savedSel1) {
+      const b1 = state.bubbles.find(b => b.id === savedSel1);
+      if (b1) {
+        state.selected1 = savedSel1;
+        b1.selected = true;
+        b1.el?.classList.add('selected', 'pulsing');
+        const selIdx = state.bubbles.findIndex(b => b.id === savedSel1);
+        const positions = getOrbitalPositions(state.bubbles.length, cx(), cy(), selIdx);
+        state.bubbles.forEach((b, i) => b.setTarget(positions[i].x, positions[i].y));
+        document.getElementById('instruction').textContent = L().ui.selectHint;
+      }
+      if (savedSel2) {
+        const b2 = state.bubbles.find(b => b.id === savedSel2);
+        if (b2) {
+          state.selected2 = savedSel2;
+          state.blendResult = savedBlend ? BLEND_MAP()[resolveBlendKey(savedSel1, savedSel2)] || null : null;
+          b2.selected = true;
+          b2.el?.classList.add('selected', 'pulsing');
+          document.getElementById('instruction').textContent = L().ui.blendHint(state.blendResult?.label);
+          document.getElementById('blend-btn').style.display = 'block';
+          document.getElementById('blend-btn').textContent = L().ui.blendBtnLabel(state.blendResult?.label);
+        }
+      }
+    }
+  } else {
+    // Rebuild baseEmotion label in new language, keep colors
+    if (savedBase) {
+      // Find the key for the base emotion
+      const baseKey = Object.keys(EMOTION_COLORS).find(k => EMOTION_COLORS[k].color === savedBase.color);
+      state.baseEmotion = baseKey ? EMOTIONS()[baseKey] : savedBase;
+    }
+    // Remap path labels for layer 1 (emotion name may change)
+    state.path = savedPath.map((p, idx) => {
+      if (idx === 0) {
+        // Layer 1: re-resolve label in new language
+        if (savedBlend) {
+          const blendKey = resolveBlendKey(savedSel1, savedSel2 || '');
+          const bm = BLEND_MAP()[blendKey];
+          return bm ? { ...p, label: bm.label } : p;
+        } else if (savedSel1) {
+          const E = EMOTIONS()[savedSel1];
+          return E ? { ...p, label: E.label } : p;
+        }
+      }
+      return p;
+    });
+
+    // Re-render the current layer
+    if (savedLayer === 2) { renderLayer2(state.baseEmotion); }
+    else if (savedLayer === 3) { renderLayer3(); }
+    else if (savedLayer === 4) { renderLayer4(); }
+    updateTrail();
+  }
+}
+
+window.addEventListener('resize', () => {
+  if (state.bubbles.length > 0) {
+    const selIdx = state.bubbles.findIndex(b => b.selected);
+    let positions;
+    if (selIdx >= 0 && state.layer === 1) {
+      positions = getOrbitalPositions(state.bubbles.length, cx(), cy(), selIdx);
+    } else {
+      positions = getFreePositions(state.bubbles.length, cx(), cy());
+    }
+    state.bubbles.forEach((b, i) => { if (positions[i]) b.setTarget(positions[i].x, positions[i].y); });
+  }
+});
+
+// ══════════════════════════════════════════════════
+//  TIMBRE BRIDGE — Find Reference Music via Gradio API
+// ══════════════════════════════════════════════════
+
+document.getElementById('find-music-btn').addEventListener('click', async () => {
+  const emotionText = state.path.map(p => p.label).join(' → ');
+  const lang = currentLang;
+  const btn = document.getElementById('find-music-btn');
+  const resultsDiv = document.getElementById('music-results');
+
+  btn.textContent = '⏳ Searching...';
+  btn.disabled = true;
+  resultsDiv.style.display = 'block';
+  resultsDiv.innerHTML = `
+    <div style="text-align:center; color:rgba(232,228,240,0.5); padding:40px 20px;
+                font-family:'Outfit',sans-serif; font-size:13px; letter-spacing:0.08em;">
+      Mapping your constellation to the music library…
+    </div>`;
+
+  try {
+    // POST to Gradio's named endpoint (defined in app.py with api_name="recommend_client")
+    const postResp = await fetch('/call/recommend_client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: [emotionText, lang] })
+    });
+
+    if (!postResp.ok) throw new Error(`API error ${postResp.status}`);
+    const { event_id } = await postResp.json();
+
+    // Stream results via SSE
+    const es = new EventSource(`/call/recommend_client/${event_id}`);
+
+    es.addEventListener('complete', (e) => {
+      try {
+        const result = JSON.parse(e.data);
+        resultsDiv.innerHTML = result[0];
+      } catch {
+        resultsDiv.innerHTML = '<div style="color:#ef5350;padding:20px;font-family:Outfit,sans-serif;">Could not parse results.</div>';
+      }
+      es.close();
+    });
+
+    es.onerror = () => {
+      resultsDiv.innerHTML = '<div style="color:#ef5350;padding:20px;font-family:Outfit,sans-serif;text-align:center;">Could not reach the music engine. Try the Text Search tab.</div>';
+      es.close();
+    };
+
+  } catch (err) {
+    resultsDiv.innerHTML = `<div style="color:#ef5350;padding:20px;font-family:Outfit,sans-serif;text-align:center;">Error: ${err.message}<br><small>Use the Text Search tab as an alternative.</small></div>`;
+  } finally {
+    btn.textContent = lang === 'zh' ? '🎵 找參考音樂' : '🎵 Find Reference Music';
+    btn.disabled = false;
+  }
+});
+
+// ══════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════
+
+renderLayer1();
+startLoop();
+</script>
+</body>
+</html>
