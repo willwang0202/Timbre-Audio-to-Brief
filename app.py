@@ -447,59 +447,96 @@ def recommend_for_musician(mood, lang):
 
 # ── Gradio 介面 ─────────────────────────────────────────────
 with gr.Blocks(title="Timbre Audio-to-Brief Engine") as demo:
-    # 語言狀態
-    lang_state = gr.State("zh")
 
-    # 頂部：標題 + 語言切換
-    with gr.Row():
-        with gr.Column(scale=5):
-            title_md = gr.Markdown("# 🎵 Timbre 聲學規格引擎")
-            subtitle_md = gr.Markdown("輸入情緒描述，AI 幫你找到最匹配的參考音樂，並自動生成聲學規格建議書。")
-        with gr.Column(scale=1, min_width=120):
-            lang_toggle = gr.Radio(
-                choices=["中文", "English"],
-                value="中文",
-                label="Language / 語言",
-                interactive=True,
+    with gr.Tabs():
+
+        # ── Tab 1: Emotion Explorer (interactive bubble UI) ──────────
+        with gr.Tab("🌌 Emotion Explorer"):
+            gr.HTML("""
+            <iframe
+              src="/emotion-ui"
+              style="width:100%; height:88vh; border:none; border-radius:10px; display:block;"
+              title="Emotion Explorer"
+            ></iframe>
+            """)
+
+        # ── Tab 2: Text Search (original text-based interface) ───────
+        with gr.Tab("📝 Text Search"):
+            # 語言狀態
+            lang_state = gr.State("zh")
+
+            # 頂部：標題 + 語言切換
+            with gr.Row():
+                with gr.Column(scale=5):
+                    title_md = gr.Markdown("# 🎵 Timbre 聲學規格引擎")
+                    subtitle_md = gr.Markdown("輸入情緒描述，AI 幫你找到最匹配的參考音樂，並自動生成聲學規格建議書。")
+                with gr.Column(scale=1, min_width=120):
+                    lang_toggle = gr.Radio(
+                        choices=["中文", "English"],
+                        value="中文",
+                        label="Language / 語言",
+                        interactive=True,
+                    )
+
+            mood_input = gr.Textbox(
+                placeholder="描述你的情緒或場景，例如：深夜開車，有點孤獨...",
+                label="情緒描述",
+                lines=2
             )
 
-    mood_input = gr.Textbox(
-        placeholder="描述你的情緒或場景，例如：深夜開車，有點孤獨...",
-        label="情緒描述",
-        lines=2
-    )
+            with gr.Row():
+                client_btn = gr.Button("🎬 我是業主（找參考音樂）", variant="primary")
+                musician_btn = gr.Button("🎸 我是音樂人（看聲學規格）", variant="secondary")
 
-    with gr.Row():
-        client_btn = gr.Button("🎬 我是業主（找參考音樂）", variant="primary")
-        musician_btn = gr.Button("🎸 我是音樂人（看聲學規格）", variant="secondary")
+            with gr.Row():
+                with gr.Column(scale=2):
+                    with gr.Column(elem_classes="timbre-results"):
+                        output_html = gr.HTML()
 
-    with gr.Row():
-        with gr.Column(scale=2):
-            # 用一個 Div 包住結果區域，給予白色背景
-            with gr.Column(elem_classes="timbre-results"):
-                output_html = gr.HTML()
+            # 語言切換邏輯
+            def switch_language(lang_choice):
+                lang = "en" if lang_choice == "English" else "zh"
+                return (
+                    lang,
+                    f"# {t('title', lang)}",
+                    t("subtitle", lang),
+                    gr.update(label=t("mood_label", lang), placeholder=t("mood_placeholder", lang)),
+                    gr.update(value=t("client_btn", lang)),
+                    gr.update(value=t("musician_btn", lang)),
+                )
 
-    # 語言切換邏輯
-    def switch_language(lang_choice):
-        lang = "en" if lang_choice == "English" else "zh"
-        return (
-            lang,  # lang_state
-            f"# {t('title', lang)}",  # title_md
-            t("subtitle", lang),  # subtitle_md
-            gr.update(label=t("mood_label", lang), placeholder=t("mood_placeholder", lang)),
-            gr.update(value=t("client_btn", lang)),
-            gr.update(value=t("musician_btn", lang)),
-        )
+            lang_toggle.change(
+                fn=switch_language,
+                inputs=[lang_toggle],
+                outputs=[lang_state, title_md, subtitle_md, mood_input, client_btn, musician_btn],
+            )
 
-    lang_toggle.change(
-        fn=switch_language,
-        inputs=[lang_toggle],
-        outputs=[lang_state, title_md, subtitle_md, mood_input, client_btn, musician_btn],
-    )
+            outputs = [output_html]
 
-    outputs = [output_html]
+            # api_name exposes these as /call/recommend_client and /call/recommend_musician
+            # so the Emotion Explorer iframe can call them via fetch
+            client_btn.click(
+                fn=recommend_for_client,
+                inputs=[mood_input, lang_state],
+                outputs=outputs,
+                api_name="recommend_client",
+            )
+            musician_btn.click(
+                fn=recommend_for_musician,
+                inputs=[mood_input, lang_state],
+                outputs=outputs,
+                api_name="recommend_musician",
+            )
 
-    client_btn.click(fn=recommend_for_client, inputs=[mood_input, lang_state], outputs=outputs)
-    musician_btn.click(fn=recommend_for_musician, inputs=[mood_input, lang_state], outputs=outputs)
+
+# ── Serve emotion_ui.html at /emotion-ui ────────────────────
+from fastapi.responses import HTMLResponse
+
+@demo.app.get("/emotion-ui", response_class=HTMLResponse)
+async def serve_emotion_ui():
+    """Serves the standalone Emotion Explorer HTML at /emotion-ui."""
+    with open("emotion_ui.html", "r", encoding="utf-8") as f:
+        return f.read()
+
 
 demo.launch(server_name="0.0.0.0", server_port=7860, allowed_paths=["songs", "../songs"])
