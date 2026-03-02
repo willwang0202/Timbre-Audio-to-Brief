@@ -1353,6 +1353,23 @@ window.addEventListener('resize', () => {
 //  TIMBRE BRIDGE — Find Reference Music via Gradio API
 // ══════════════════════════════════════════════════
 
+// srcdoc iframes have window.location.origin === "null" (about:srcdoc origin).
+// With sandbox="allow-same-origin", window.parent is accessible and holds the
+// real Gradio server origin (e.g. https://wca0202-timbre-audio-to-brief.hf.space).
+// document.baseURI also inherits the parent URL per the HTML spec and is a
+// reliable fallback.
+const GRADIO_API_ROOT = (() => {
+  try {
+    const o = window.parent.location.origin;
+    if (o && o !== 'null') return o;
+  } catch (_) {}
+  try {
+    const o = new URL('/', document.baseURI).origin;
+    if (o && o !== 'null') return o;
+  } catch (_) {}
+  return window.location.origin;
+})();
+
 document.getElementById('find-music-btn').addEventListener('click', async () => {
   const emotionText = state.path.map(p => p.label).join(' → ');
   const lang = currentLang;
@@ -1370,7 +1387,7 @@ document.getElementById('find-music-btn').addEventListener('click', async () => 
 
   try {
     // POST to Gradio's named endpoint (defined in app.py with api_name="recommend_client")
-    const postResp = await fetch('/call/recommend_client', {
+    const postResp = await fetch(`${GRADIO_API_ROOT}/call/recommend_client`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data: [emotionText, lang] })
@@ -1380,7 +1397,7 @@ document.getElementById('find-music-btn').addEventListener('click', async () => 
     const { event_id } = await postResp.json();
 
     // Stream results via SSE
-    const es = new EventSource(`/call/recommend_client/${event_id}`);
+    const es = new EventSource(`${GRADIO_API_ROOT}/call/recommend_client/${event_id}`);
 
     es.addEventListener('complete', (e) => {
       try {
