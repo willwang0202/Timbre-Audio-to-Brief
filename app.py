@@ -27,6 +27,7 @@ if _raw:
     _songs_compact = [
         {
             "t":  str(r["title"]),
+            "b":  round(float(r["bpm"]),        1),
             "v":  round(float(r["valence"]),    2),
             "a":  round(float(r["arousal"]),    2),
             "h":  round(float(r["mood_happy"]),      3),

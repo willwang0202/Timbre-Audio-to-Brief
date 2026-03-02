@@ -168,7 +168,7 @@
 
   /* ── BLEND BUTTON ── */
   #blend-btn {
-    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    position: fixed; bottom: 145px; left: 50%; transform: translateX(-50%);
     z-index: 25;
     background: rgba(255,255,255,0.06);
     border: 1px solid rgba(255,255,255,0.15);
@@ -416,11 +416,10 @@
   <div class="const-headline" id="const-headline">你內心世界的肖像</div>
   <div class="const-map" id="const-map"></div>
   <div class="const-actions">
-    <button class="btn-primary" id="find-music-btn" style="display:none; background:rgba(245,197,24,0.10); border-color:rgba(245,197,24,0.35); color:#F5C518;">🎵 Find Reference Music</button>
     <button class="btn-primary" id="save-btn">儲存至日記</button>
     <button class="btn-primary" id="restart-btn">再次探索</button>
   </div>
-  <div id="music-results" style="display:none; margin-top:28px; max-width:720px; width:100%; max-height:55vh; overflow-y:auto; border-radius:12px; text-align:left;"></div>
+  <div id="music-results" style="display:none; margin-top:28px; max-width:760px; width:100%; max-height:52vh; overflow-y:auto; border-radius:12px; text-align:left;"></div>
 </div>
 
 <script>
@@ -1106,12 +1105,10 @@ function showConstellation() {
 
   panel.classList.add('visible');
 
-  // Show Timbre bridge button
-  const findBtn = document.getElementById('find-music-btn');
-  findBtn.style.display = 'inline-block';
-  findBtn.textContent = currentLang === 'zh' ? '🎵 找參考音樂' : '🎵 Find Reference Music';
+  // Auto-show combined results after constellation animates in
   document.getElementById('music-results').style.display = 'none';
   document.getElementById('music-results').innerHTML = '';
+  setTimeout(() => showCombinedResults(), 700);
 
   // Animate nodes in
   const chips = map.querySelectorAll('.const-chip');
@@ -1209,7 +1206,6 @@ document.getElementById('reset-btn').addEventListener('click', () => {
   document.getElementById('history-trail').style.opacity = '1';
   document.getElementById('instruction').style.opacity = '1';
   document.getElementById('constellation-panel').classList.remove('visible');
-  document.getElementById('find-music-btn').style.display = 'none';
   document.getElementById('music-results').style.display = 'none';
   document.getElementById('music-results').innerHTML = '';
   state.animating = false;
@@ -1221,7 +1217,6 @@ document.getElementById('restart-btn').addEventListener('click', () => {
   document.getElementById('layer-title').style.opacity = '1';
   document.getElementById('history-trail').style.opacity = '1';
   document.getElementById('instruction').style.opacity = '1';
-  document.getElementById('find-music-btn').style.display = 'none';
   document.getElementById('music-results').style.display = 'none';
   document.getElementById('music-results').innerHTML = '';
   state.animating = false;
@@ -1350,11 +1345,10 @@ window.addEventListener('resize', () => {
 });
 
 // ══════════════════════════════════════════════════
-//  TIMBRE BRIDGE — JS-native recommendation
-//  window.__TIMBRE_SONGS__ is injected by app.py at startup
+//  TIMBRE — JS-native combined recommendation
+//  window.__TIMBRE_SONGS__ injected by app.py at startup
 // ══════════════════════════════════════════════════
 
-// Valence/Arousal/Mood target for each core emotion and blend
 const EMOTION_PROFILES = {
   joy:                   { v:7.5, a:6.5, h:0.90, s:0.00, ag:0.05, r:0.10, p:0.50, d:0.60 },
   calm:                  { v:6.0, a:2.5, h:0.40, s:0.10, ag:0.00, r:0.90, p:0.05, d:0.20 },
@@ -1379,20 +1373,15 @@ const EMOTION_PROFILES = {
   'fear+anticipation':   { v:3.5, a:7.0, h:0.10, s:0.35, ag:0.20, r:0.00, p:0.10, d:0.20 },
 };
 
-// Map displayed label (zh or en) → profile key
 const LABEL_TO_KEY = {
-  // EN core
   'joy':'joy','calm':'calm','sadness':'sadness','anger':'anger',
   'fear':'fear','anticipation':'anticipation',
-  // EN blends
   'bittersweet':'joy+sadness','fierce joy':'joy+anger','excitement':'joy+fear',
   'enthusiasm':'joy+anticipation','contentment':'joy+calm','melancholy':'calm+sadness',
   'resolve':'calm+anger','apprehension':'calm+fear','hope':'calm+anticipation',
   'anguish':'sadness+anger','despair':'sadness+fear','longing':'sadness+anticipation',
   'panic':'anger+fear','determination':'anger+anticipation','dread':'fear+anticipation',
-  // ZH core
   '喜悅':'joy','平靜':'calm','悲傷':'sadness','憤怒':'anger','恐懼':'fear','期待':'anticipation',
-  // ZH blends
   '苦樂交織':'joy+sadness','熾烈歡欣':'joy+anger','亢奮激動':'joy+fear',
   '滿腔熱忱':'joy+anticipation','恬然知足':'joy+calm','淡淡憂愁':'calm+sadness',
   '沉著堅定':'calm+anger','隱隱不安':'calm+fear','靜待希望':'calm+anticipation',
@@ -1401,72 +1390,148 @@ const LABEL_TO_KEY = {
 };
 
 function getEmotionKey(pathLabels) {
-  const first = (pathLabels[0] || '').trim().toLowerCase();
-  return LABEL_TO_KEY[first] || LABEL_TO_KEY[(pathLabels[0] || '').trim()] || 'joy';
+  const first = (pathLabels[0] || '').trim();
+  return LABEL_TO_KEY[first.toLowerCase()] || LABEL_TO_KEY[first] || 'joy';
 }
 
+// Returns top-k full song objects (with all feature fields for the brief)
 function findTopSongs(emotionKey, topK) {
   const songs = window.__TIMBRE_SONGS__;
   if (!songs || !songs.length) return [];
   const p = EMOTION_PROFILES[emotionKey] || EMOTION_PROFILES['joy'];
   const scored = songs.map(s => {
     const vd = (s.v - p.v) / 9, ad = (s.a - p.a) / 9;
-    const dist = Math.sqrt(vd*vd + ad*ad);
+    const dist = Math.sqrt(vd * vd + ad * ad);
     const mood = s.h*p.h + s.s*p.s + s.ag*p.ag + s.r*p.r + s.p*p.p + s.d*(p.d||0);
-    return { title: s.t, score: mood - dist * 1.5 };
+    return { song: s, score: mood - dist * 1.5 };
   });
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, topK);
+  return scored.slice(0, topK).map(x => x.song);
 }
 
-function renderMusicResults(songs, lang) {
-  const header     = lang === 'zh' ? '🎵 推薦參考音樂'   : '🎵 Recommended Reference Tracks';
-  const searchLbl  = lang === 'zh' ? '在 YouTube 搜尋'  : 'Search on YouTube';
-  if (!songs.length) {
-    return `<div style="color:rgba(232,228,240,0.4);text-align:center;padding:40px;
-            font-family:'Outfit',sans-serif;">No matching songs found.</div>`;
-  }
-  let html = `<div style="font-family:'Outfit',sans-serif;color:#e8e4f0;padding:8px;">
-    <h3 style="margin:0 0 16px 0;font-size:15px;color:rgba(232,228,240,0.6);
-               letter-spacing:0.08em;font-weight:400;">${header}</h3>`;
-  songs.forEach((s, i) => {
-    const ytUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(s.title);
-    html += `<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);
-                  border-radius:10px;padding:14px 16px;margin:8px 0;">
-      <div style="font-size:14px;font-weight:500;margin-bottom:10px;line-height:1.4;">${i+1}. ${s.title}</div>
-      <a href="${ytUrl}" target="_blank" rel="noopener"
-         style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;
-                background:rgba(255,65,54,0.12);border:1px solid rgba(255,65,54,0.3);
-                border-radius:6px;color:#ff6b6b;text-decoration:none;font-size:12px;
-                letter-spacing:0.04em;">▶ ${searchLbl}</a>
-    </div>`;
-  });
-  html += '</div>';
-  return html;
+function generateAcousticBrief(songs, lang) {
+  if (!songs.length) return '';
+  const zh = lang === 'zh';
+  const n = songs.length;
+  const avg = {
+    bpm: songs.reduce((s, x) => s + (x.b || 100), 0) / n,
+    v:   songs.reduce((s, x) => s + x.v, 0) / n,
+    a:   songs.reduce((s, x) => s + x.a, 0) / n,
+    h:   songs.reduce((s, x) => s + x.h, 0) / n,
+    sa:  songs.reduce((s, x) => s + x.s, 0) / n,
+    ag:  songs.reduce((s, x) => s + x.ag, 0) / n,
+    r:   songs.reduce((s, x) => s + x.r, 0) / n,
+    p:   songs.reduce((s, x) => s + x.p, 0) / n,
+    d:   songs.reduce((s, x) => s + x.d, 0) / n,
+  };
+  const tempo  = avg.bpm < 80  ? (zh?'慢板':'Slow')
+               : avg.bpm < 110 ? (zh?'中板':'Moderate')
+               : avg.bpm < 140 ? (zh?'快板':'Fast') : (zh?'極快':'Very Fast');
+  const energy = avg.a < 3.5 ? (zh?'低能量・柔和':'Low / Soft')
+               : avg.a < 5.5 ? (zh?'中等能量':'Medium')
+               : avg.a < 7   ? (zh?'高能量・張力':'High / Tense') : (zh?'爆發性':'Explosive');
+  const tone   = avg.v < 3 ? (zh?'偏暗・負面':'Dark / Negative')
+               : avg.v < 5 ? (zh?'中性偏沉':'Neutral-Dark')
+               : avg.v < 7 ? (zh?'正面・明亮':'Positive / Bright') : (zh?'非常正面':'Very Bright');
+  const tags = [];
+  if (avg.h  > 0.4) tags.push(zh?'歡樂':'Happy');
+  if (avg.sa > 0.4) tags.push(zh?'感傷':'Sad');
+  if (avg.ag > 0.3) tags.push(zh?'激烈':'Aggressive');
+  if (avg.r  > 0.4) tags.push(zh?'放鬆':'Relaxed');
+  if (avg.p  > 0.4) tags.push(zh?'派對':'Party');
+  if (avg.d  > 0.6) tags.push(zh?'律動感':'Groovy');
+  if (!tags.length) tags.push(zh?'中性':'Neutral');
+  const sugg = [];
+  if (avg.d  > 0.6)               sugg.push(zh?'強調節奏律動':'Emphasize rhythmic groove');
+  if (avg.r  > 0.5 && avg.a < 4)  sugg.push(zh?'柔和音色：pad / 木吉他':'Soft timbres: pads, acoustic guitar');
+  if (avg.ag > 0.3 && avg.a > 5)  sugg.push(zh?'加入失真吉他或強力鼓點':'Distorted guitars or heavy drums');
+  if (avg.sa > 0.4 && avg.v < 4)  sugg.push(zh?'選擇小調和聲':'Use minor key harmony');
+  if (avg.h  > 0.5 && avg.v > 5)  sugg.push(zh?'選擇大調和聲':'Use major key harmony');
+  if (avg.p  > 0.4 && avg.d > 0.5) sugg.push(zh?'加入合成器與電子鼓點':'Add synths and electronic drums');
+  if (avg.a  < 3)                  sugg.push(zh?'注意留白與空間感':'Leave space in the arrangement');
+  if (!sugg.length)                sugg.push(zh?'依情緒自由發揮':'Follow the emotion freely');
+  const lbl = {
+    spec:  zh?'📋 聲學規格建議書':'📋 Acoustic Brief',
+    tempo: zh?'🎯 建議速度':'🎯 Tempo',
+    nrg:   zh?'⚡ 能量強度':'⚡ Energy',
+    tone:  zh?'🌈 情緒色彩':'🌈 Tone',
+    tags:  zh?'🏷️ 風格標籤':'🏷️ Tags',
+    prod:  zh?'💡 製作建議':'💡 Production',
+  };
+  const row = (label, val) =>
+    `<div style="display:flex;gap:8px;margin:5px 0;font-size:12px;line-height:1.5;">
+       <span style="color:rgba(232,228,240,0.42);white-space:nowrap;flex-shrink:0;">${label}</span>
+       <span style="color:rgba(232,228,240,0.85);">${val}</span></div>`;
+  return `<div style="font-family:'Outfit',sans-serif;">
+    <div style="font-size:10px;letter-spacing:0.18em;text-transform:uppercase;
+                color:rgba(232,228,240,0.32);margin-bottom:12px;">${lbl.spec}</div>
+    ${row(lbl.tempo,  `~${Math.round(avg.bpm)} BPM（${tempo}）`)}
+    ${row(lbl.nrg,    energy)}
+    ${row(lbl.tone,   tone)}
+    ${row(lbl.tags,   tags.join(' / '))}
+    <div style="font-size:10px;letter-spacing:0.12em;text-transform:uppercase;
+                color:rgba(232,228,240,0.32);margin:12px 0 6px;">${lbl.prod}</div>
+    ${sugg.slice(0,3).map(s=>`<div style="font-size:12px;color:rgba(232,228,240,0.62);
+      padding-left:8px;margin:3px 0;line-height:1.5;">• ${s}</div>`).join('')}
+  </div>`;
 }
 
-document.getElementById('find-music-btn').addEventListener('click', () => {
+function showCombinedResults() {
   const pathLabels = state.path.map(p => p.label);
   const lang       = currentLang;
-  const btn        = document.getElementById('find-music-btn');
+  const zh         = lang === 'zh';
   const resultsDiv = document.getElementById('music-results');
 
-  btn.textContent = lang === 'zh' ? '⏳ 搜尋中…' : '⏳ Searching…';
-  btn.disabled = true;
-  resultsDiv.style.display = 'block';
+  const songs = findTopSongs(getEmotionKey(pathLabels), 3);
 
-  try {
-    const key   = getEmotionKey(pathLabels);
-    const songs = findTopSongs(key, 3);
-    resultsDiv.innerHTML = renderMusicResults(songs, lang);
-  } catch (err) {
-    resultsDiv.innerHTML = `<div style="color:#ef5350;padding:20px;font-family:'Outfit',sans-serif;
-      text-align:center;">Error: ${err.message}</div>`;
-  } finally {
-    btn.textContent = lang === 'zh' ? '🎵 找參考音樂' : '🎵 Find Reference Music';
-    btn.disabled = false;
-  }
-});
+  const searchLbl   = zh ? '在 YouTube 搜尋' : 'Search on YouTube';
+  const tracksTitle = zh ? '🎵 參考音樂'     : '🎵 Reference Tracks';
+  const summaryLbl  = zh ? '你的情緒路徑'   : 'Your Emotion Path';
+  const pathText    = pathLabels.join('  →  ');
+
+  const tracksHtml = songs.map((s, i) => {
+    const ytUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(s.t);
+    return `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);
+                 border-radius:9px;padding:11px 13px;margin:0 0 8px;">
+      <div style="font-size:13px;font-weight:500;margin-bottom:8px;line-height:1.4;
+                  color:rgba(232,228,240,0.9);">${i+1}. ${s.t}</div>
+      <a href="${ytUrl}" target="_blank" rel="noopener"
+         style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;
+                background:rgba(255,65,54,0.10);border:1px solid rgba(255,65,54,0.28);
+                border-radius:6px;color:#ff7070;text-decoration:none;
+                font-size:11px;letter-spacing:0.06em;">▶ ${searchLbl}</a>
+    </div>`;
+  }).join('');
+
+  resultsDiv.innerHTML = `
+    <div style="font-family:'Outfit',sans-serif;color:#e8e4f0;padding:4px 2px;">
+
+      <!-- Emotion path summary -->
+      <div style="margin-bottom:14px;padding:11px 15px;
+                  background:rgba(255,255,255,0.03);border-radius:10px;
+                  border:1px solid rgba(255,255,255,0.07);">
+        <div style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;
+                    color:rgba(232,228,240,0.32);margin-bottom:5px;">${summaryLbl}</div>
+        <div style="font-family:'Cormorant Garamond',serif;font-style:italic;
+                    font-size:15px;color:rgba(232,228,240,0.75);line-height:1.5;">${pathText}</div>
+      </div>
+
+      <!-- Two-column: tracks | brief -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;">
+        <div>
+          <div style="font-size:10px;letter-spacing:0.18em;text-transform:uppercase;
+                      color:rgba(232,228,240,0.32);margin-bottom:10px;">${tracksTitle}</div>
+          ${tracksHtml}
+        </div>
+        <div style="padding:13px 15px;background:rgba(255,255,255,0.03);
+                    border:1px solid rgba(255,255,255,0.07);border-radius:10px;">
+          ${generateAcousticBrief(songs, lang)}
+        </div>
+      </div>
+    </div>`;
+
+  resultsDiv.style.display = 'block';
+}
 
 // ══════════════════════════════════════════════════
 //  INIT
