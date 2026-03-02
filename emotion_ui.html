@@ -1329,6 +1329,15 @@ function switchLang(lang) {
     else if (savedLayer === 4) { renderLayer4(); }
     updateTrail();
   }
+
+  // Refresh results panel if constellation is currently showing
+  const panel = document.getElementById('constellation-panel');
+  const resultsDiv = document.getElementById('music-results');
+  if (panel.classList.contains('visible') && resultsDiv.style.display !== 'none') {
+    _lastLang = lang;
+    // Rebuild the full shell (toggle labels + path summary) in the new language
+    showCombinedResults();
+  }
 }
 
 window.addEventListener('resize', () => {
@@ -1476,18 +1485,16 @@ function generateAcousticBrief(songs, lang) {
   </div>`;
 }
 
-function showCombinedResults() {
-  const pathLabels = state.path.map(p => p.label);
-  const lang       = currentLang;
-  const zh         = lang === 'zh';
-  const resultsDiv = document.getElementById('music-results');
+// ── Role toggle state ────────────────────────────
+let _lastSongs = [];
+let _lastLang  = 'zh';
+let currentRole = 'client';   // 'client' | 'musician'
 
-  const songs = findTopSongs(getEmotionKey(pathLabels), 3);
-
+function renderRoleView(role) {
+  const zh          = _lastLang === 'zh';
+  const songs       = _lastSongs;
   const searchLbl   = zh ? '在 YouTube 搜尋' : 'Search on YouTube';
   const tracksTitle = zh ? '🎵 參考音樂'     : '🎵 Reference Tracks';
-  const summaryLbl  = zh ? '你的情緒路徑'   : 'Your Emotion Path';
-  const pathText    = pathLabels.join('  →  ');
 
   const tracksHtml = songs.map((s, i) => {
     const ytUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(s.t);
@@ -1503,6 +1510,60 @@ function showCombinedResults() {
     </div>`;
   }).join('');
 
+  const content = document.getElementById('role-content');
+  if (!content) return;
+
+  if (role === 'client') {
+    content.innerHTML = `
+      <div>
+        <div style="font-size:10px;letter-spacing:0.18em;text-transform:uppercase;
+                    color:rgba(232,228,240,0.32);margin-bottom:10px;">${tracksTitle}</div>
+        ${tracksHtml}
+      </div>`;
+  } else {
+    content.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;">
+        <div>
+          <div style="font-size:10px;letter-spacing:0.18em;text-transform:uppercase;
+                      color:rgba(232,228,240,0.32);margin-bottom:10px;">${tracksTitle}</div>
+          ${tracksHtml}
+        </div>
+        <div style="padding:13px 15px;background:rgba(255,255,255,0.03);
+                    border:1px solid rgba(255,255,255,0.07);border-radius:10px;">
+          ${generateAcousticBrief(songs, _lastLang)}
+        </div>
+      </div>`;
+  }
+
+  // Sync toggle button visual states
+  const cBtn = document.getElementById('role-client-btn');
+  const mBtn = document.getElementById('role-musician-btn');
+  if (cBtn && mBtn) {
+    cBtn.style.background = role === 'client'   ? 'rgba(255,255,255,0.10)' : 'transparent';
+    cBtn.style.color      = role === 'client'   ? 'rgba(232,228,240,0.95)' : 'rgba(232,228,240,0.40)';
+    mBtn.style.background = role === 'musician' ? 'rgba(255,255,255,0.10)' : 'transparent';
+    mBtn.style.color      = role === 'musician' ? 'rgba(232,228,240,0.95)' : 'rgba(232,228,240,0.40)';
+  }
+}
+
+function showCombinedResults() {
+  const pathLabels = state.path.map(p => p.label);
+  const lang       = currentLang;
+  const zh         = lang === 'zh';
+  const resultsDiv = document.getElementById('music-results');
+
+  _lastSongs = findTopSongs(getEmotionKey(pathLabels), 3);
+  _lastLang  = lang;
+
+  const summaryLbl  = zh ? '你的情緒路徑' : 'Your Emotion Path';
+  const pathText    = pathLabels.join('  →  ');
+  const clientLbl   = zh ? '🎬 業主'      : '🎬 Client';
+  const musicianLbl = zh ? '🎸 音樂人'    : '🎸 Musician';
+
+  const btnBase = `padding:7px 20px;border-radius:30px;font-size:11px;
+    font-family:'Outfit',sans-serif;letter-spacing:0.1em;
+    cursor:pointer;border:none;transition:all 0.2s ease;`;
+
   resultsDiv.innerHTML = `
     <div style="font-family:'Outfit',sans-serif;color:#e8e4f0;padding:4px 2px;">
 
@@ -1516,21 +1577,28 @@ function showCombinedResults() {
                     font-size:15px;color:rgba(232,228,240,0.75);line-height:1.5;">${pathText}</div>
       </div>
 
-      <!-- Two-column: tracks | brief -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;">
-        <div>
-          <div style="font-size:10px;letter-spacing:0.18em;text-transform:uppercase;
-                      color:rgba(232,228,240,0.32);margin-bottom:10px;">${tracksTitle}</div>
-          ${tracksHtml}
-        </div>
-        <div style="padding:13px 15px;background:rgba(255,255,255,0.03);
-                    border:1px solid rgba(255,255,255,0.07);border-radius:10px;">
-          ${generateAcousticBrief(songs, lang)}
-        </div>
+      <!-- Role toggle -->
+      <div style="display:inline-flex;gap:4px;padding:4px;
+                  background:rgba(255,255,255,0.04);border-radius:40px;
+                  border:1px solid rgba(255,255,255,0.08);margin-bottom:16px;">
+        <button id="role-client-btn"
+                onclick="currentRole='client';renderRoleView('client')"
+                style="${btnBase}background:rgba(255,255,255,0.10);color:rgba(232,228,240,0.95);">
+          ${clientLbl}
+        </button>
+        <button id="role-musician-btn"
+                onclick="currentRole='musician';renderRoleView('musician')"
+                style="${btnBase}background:transparent;color:rgba(232,228,240,0.40);">
+          ${musicianLbl}
+        </button>
       </div>
+
+      <!-- Role content (swapped by renderRoleView) -->
+      <div id="role-content"></div>
     </div>`;
 
   resultsDiv.style.display = 'block';
+  renderRoleView(currentRole);
 }
 
 // ══════════════════════════════════════════════════
