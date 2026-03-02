@@ -5,6 +5,8 @@ import re
 import os
 import html as html_lib
 import pandas as pd
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 # ── Load Emotion Explorer HTML at startup ───────────────────
 import json as _json
@@ -22,6 +24,16 @@ from download_models import ensure_models
 ensure_models()  # 確保模型已下載（HF Spaces 首次啟動時）
 from recommend_v2 import recommend, song_library, song_features
 
+# ── YouTube ID cache ────────────────────────────────────────
+_YT_CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "youtube_id_cache.json")
+_yt_cache: dict = {}
+try:
+    with open(_YT_CACHE_PATH, "r", encoding="utf-8") as _cf:
+        _yt_cache = _json.load(_cf)
+    print(f"[Timbre] Loaded YT cache: {len(_yt_cache)} entries")
+except Exception:
+    print("[Timbre] No YT cache found — will populate in background")
+
 # ── Inject song library into Emotion Explorer HTML ──────────
 if _raw:
     _songs_compact = [
@@ -36,9 +48,13 @@ if _raw:
             "r":  round(float(r["mood_relaxed"]),    3),
             "p":  round(float(r["mood_party"]),      3),
             "d":  round(float(r["danceability"]),    3),
+            "yt": _yt_cache.get(str(r["title"])),   # None if not yet cached
         }
         for _, r in song_features.iterrows()
     ]
+    _yt_ok = sum(1 for s in _songs_compact if s["yt"])
+    print(f"[Timbre] {_yt_ok}/{len(_songs_compact)} songs have cached YouTube IDs")
+
     _song_script = (
         "<script>window.__TIMBRE_SONGS__="
         + _json.dumps(_songs_compact, ensure_ascii=True, separators=(",", ":"))
@@ -47,6 +63,37 @@ if _raw:
     _raw_injected = _raw.replace("</head>", _song_script + "</head>", 1)
     _EMOTION_UI_SRCDOC = _raw_injected.replace("&", "&amp;").replace('"', "&quot;")
     print(f"[Timbre] Injected {len(_songs_compact)} songs into srcdoc ({len(_EMOTION_UI_SRCDOC):,} chars)")
+
+    # ── Background thread: fill missing YouTube IDs and save cache ──
+    def _fill_yt_cache_bg():
+        missing = [s["t"] for s in _songs_compact if not s["yt"]]
+        if not missing:
+            return
+        print(f"[Timbre] BG: fetching {len(missing)} missing YouTube IDs …")
+
+        def _fetch(title):
+            try:
+                return title, get_youtube_video_id(title)
+            except Exception:
+                return title, None
+
+        updated = 0
+        with ThreadPoolExecutor(max_workers=10) as _ex:
+            for title, vid in _ex.map(_fetch, missing):
+                if vid:
+                    _yt_cache[title] = vid
+                    updated += 1
+
+        if updated:
+            try:
+                with open(_YT_CACHE_PATH, "w", encoding="utf-8") as _cf:
+                    _json.dump(_yt_cache, _cf, ensure_ascii=False)
+                print(f"[Timbre] BG: saved YT cache ({len(_yt_cache)} entries). "
+                      "Restart the Space to serve embedded players.")
+            except Exception as _e:
+                print(f"[Timbre] BG: failed to save YT cache: {_e}")
+
+    threading.Thread(target=_fill_yt_cache_bg, daemon=True).start()
 
 
 def get_local_audio_path(filename):
@@ -497,7 +544,8 @@ with gr.Blocks(title="Timbre Audio-to-Brief Engine") as demo:
             if _EMOTION_UI_SRCDOC:
                 gr.HTML(
                     f'<iframe srcdoc="{_EMOTION_UI_SRCDOC}"'
-                    ' sandbox="allow-scripts allow-same-origin allow-popups"'
+                    ' sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"'
+                    ' allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"'
                     ' style="width:100%; height:88vh; border:none; border-radius:10px; display:block;"'
                     ' title="Emotion Explorer"></iframe>'
                 )

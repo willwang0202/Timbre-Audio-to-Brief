@@ -7,3 +7,4 @@ songs/
 archive/
 *.pdf
 .claude/
+youtube_id_cache.json
