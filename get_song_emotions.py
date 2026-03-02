@@ -74,7 +74,7 @@ def classify_from_essentia(row):
 
 
 features['emotion'] = features.apply(classify_from_essentia, axis=1)
-features.to_csv('song_emotions.csv', index=False)
+features.to_csv('song_features.csv', index=False)
 
 print("Distribution:")
 print(features['emotion'].value_counts())

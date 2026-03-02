@@ -24,8 +24,7 @@ song_features = pd.read_csv("song_features.csv")
 
 # 解決不對齊問題：透過 filename 或 title 進行 Merge，確保 index 絕對一致
 song_data = pd.merge(song_library, song_features, on="title", how="inner")
-song_emotions = pd.read_csv("song_emotions.csv")[["title", "emotion"]].drop_duplicates(subset=["title"])
-song_data = pd.merge(song_data, song_emotions, on="title", how="left")
+song_data["emotion"] = song_data["emotion"].fillna("focused")
 song_data["emotion"] = song_data["emotion"].fillna("focused")
 
 # 用於推薦的特徵欄位（加入 BPM 讓高速/低速歌曲更好區分）
@@ -155,8 +154,7 @@ MOOD_PROFILES = {
     },
 }
 
-# ── 語意描述（給 sentence-transformer 用）──────────────────
-# 每個 mood 用多種表達方式描述，涵蓋中英文、同義詞、場景描述
+# ── 語意描述（用 Sentence-Transformers 預測 12 種 ESSENTIA 情緒） ──
 EMOTION_DESCRIPTIONS = {
     'sad':        "heartbreak crying alone grief loss breakup tears sorrow",
     'melancholic': "nostalgic bittersweet longing wistful memories fading away",
@@ -172,13 +170,12 @@ EMOTION_DESCRIPTIONS = {
     'angry':      "rage aggressive intense dark heavy metal punk fighting",
 }
 
-# 預計算 mood description 的 embeddings
 print("預計算情緒語意向量中...")
 emotion_embeddings = {
     emotion: semantic_model.encode(desc, convert_to_tensor=True)
     for emotion, desc in EMOTION_DESCRIPTIONS.items()
 }
-print("✅ 語意向量準備完成\n")
+print("✅ 情緒語意向量準備完成\n")
 
 def detect_emotion_semantic(text):
     """將輸入文字對應到最符合的 Emotion 標籤"""
@@ -191,7 +188,6 @@ def detect_emotion_semantic(text):
         
     best = max(scores, key=scores.get)
     return best, scores
-
 
 def euclidean_sim(a, b):
     """Euclidean distance converted to a similarity score [0, 1]"""
@@ -224,6 +220,7 @@ def recommend(mood_description, top_k=5, return_results=False):
     ])
     
     # 4. 根據情緒過濾歌庫 (賦予極高權重，讓符合 emotion 的歌曲優先排在前面)
+    # 這樣既能過濾，又能在該 emotion 歌曲不足 top_k 時，讓其他歌曲補上
     is_matching_emotion = (song_data["emotion"] == best_emotion).values
     final_scores = sim_scores + (is_matching_emotion * 100.0)
     
@@ -238,7 +235,6 @@ def recommend(mood_description, top_k=5, return_results=False):
             print(f"  {rank + 1}. {title} {match_mark} (特徵相似度: {real_score:.3f})")
 
     return list(zip(top_indices, sim_scores[top_indices]))
-
 
 # ── 測試 ──────────────────────────────────────────────────
 if __name__ == "__main__":

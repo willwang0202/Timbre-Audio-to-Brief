@@ -4,11 +4,9 @@ import numpy as np
 with open("recommend_v2.py", "r") as f:
     code = f.read()
 
-# 1. Add merging with song_emotions.csv
+# 1. Add merging with song_emotions.csv (removed as song_features.csv now has emotion)
 old_merge = '''song_data = pd.merge(song_library, song_features, on="title", how="inner")'''
 new_merge = '''song_data = pd.merge(song_library, song_features, on="title", how="inner")
-song_emotions = pd.read_csv("song_emotions.csv")[["title", "emotion"]].drop_duplicates("title")
-song_data = pd.merge(song_data, song_emotions, on="title", how="left")
 song_data["emotion"] = song_data["emotion"].fillna("focused")'''
 code = code.replace(old_merge, new_merge)
 

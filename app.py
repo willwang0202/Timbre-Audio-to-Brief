@@ -118,11 +118,12 @@ ytmusic = YTMusic()
 
 def get_youtube_video_id(query):
     """取得 YouTube Video ID，使用三重 Fallback 機制確保能在 HF Spaces 成功"""
-    # 1. ytmusicapi
+    # 1. ytmusicapi (YouTube Music 原生搜尋，包含官方 MV 與純音軌，極低廣告干擾)
     try:
-        results = ytmusic.search(query, filter="songs")
-        if results and len(results) > 0 and 'videoId' in results[0]:
-            return results[0]['videoId']
+        results = ytmusic.search(query)
+        for r in results:
+            if 'videoId' in r and r['videoId']:
+                return r['videoId']
     except Exception as e:
         print(f"  [Fallback 1 Failed] ytmusicapi: {e}")
 
@@ -140,7 +141,7 @@ def get_youtube_video_id(query):
     except Exception as e:
         print(f"  [Fallback 2 Failed] DuckDuckGo: {e}")
 
-    # 3. YouTube Search HTML
+    # 3. YouTube Search HTML (最易受廣告干擾)
     try:
         encoded = urllib.parse.quote(query)
         req = urllib.request.Request(
