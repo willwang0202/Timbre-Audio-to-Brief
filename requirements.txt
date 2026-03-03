@@ -3,4 +3,5 @@ numpy
 pandas
 argostranslate
 ytmusicapi
+yt-dlp
 sentence-transformers
