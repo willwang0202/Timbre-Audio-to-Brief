@@ -1498,23 +1498,15 @@ function renderRoleView(role) {
 
   const tracksHtml = songs.map((s, i) => {
     const ytUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(s.t);
-    const media = s.yt
-      ? `<iframe
-           src="https://www.youtube.com/embed/${s.yt}?rel=0&modestbranding=1"
-           width="100%" height="152" frameborder="0"
-           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-           allowfullscreen
-           style="border-radius:7px;display:block;margin-top:8px;"></iframe>`
-      : `<a href="${ytUrl}" target="_blank" rel="noopener"
-           style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;
-                  background:rgba(255,65,54,0.10);border:1px solid rgba(255,65,54,0.28);
-                  border-radius:6px;color:#ff7070;text-decoration:none;
-                  font-size:11px;letter-spacing:0.06em;">▶ ${searchLbl}</a>`;
     return `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);
-                 border-radius:9px;padding:11px 13px;margin:0 0 10px;">
-      <div style="font-size:13px;font-weight:500;margin-bottom:6px;line-height:1.4;
+                 border-radius:9px;padding:11px 13px;margin:0 0 8px;">
+      <div style="font-size:13px;font-weight:500;margin-bottom:8px;line-height:1.4;
                   color:rgba(232,228,240,0.9);">${i+1}. ${s.t}</div>
-      ${media}
+      <a href="${ytUrl}" target="_blank" rel="noopener"
+         style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;
+                background:rgba(255,65,54,0.10);border:1px solid rgba(255,65,54,0.28);
+                border-radius:6px;color:#ff7070;text-decoration:none;
+                font-size:11px;letter-spacing:0.06em;">▶ ${searchLbl}</a>
     </div>`;
   }).join('');
 

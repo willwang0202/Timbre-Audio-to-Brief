@@ -544,8 +544,7 @@ with gr.Blocks(title="Timbre Audio-to-Brief Engine") as demo:
             if _EMOTION_UI_SRCDOC:
                 gr.HTML(
                     f'<iframe srcdoc="{_EMOTION_UI_SRCDOC}"'
-                    ' sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"'
-                    ' allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"'
+                    ' sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"'
                     ' style="width:100%; height:88vh; border:none; border-radius:10px; display:block;"'
                     ' title="Emotion Explorer"></iframe>'
                 )
