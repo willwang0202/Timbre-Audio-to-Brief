@@ -415,32 +415,33 @@ def main() -> None:
     print(f"Songs directory  : {SONGS_DIR}/")
     print(f"Archive file     : {ARCHIVE_FILE}  (tracks downloaded IDs for resume)")
     print(f"Already on disk  : {count_songs()} MP3 files")
-    print(f"Target           : {TARGET} total downloads")
+    print(f"Target           : {TARGET} new successful downloads this run")
     print(f"Total queries    : {len(ALL_QUERIES)}")
     print(f"  - Genre        : {len(GENRE_QUERIES)}")
     print(f"  - Decade style : {len(DECADE_QUERIES)}")
     print(f"  - Year 1950–25 : {len(YEAR_QUERIES)}")
     print()
 
-    total_new = 0
+    total_new = 0    # only counts successfully downloaded MP3s this run
+    total_failed = 0
 
     for q_idx, query in enumerate(ALL_QUERIES):
-        current_total = count_songs()
-        if current_total >= TARGET:
-            print(f"\nTarget of {TARGET} reached ({current_total} songs on disk). Stopping.")
+        if total_new >= TARGET:
+            print(f"\nTarget of {TARGET} successful downloads reached. Stopping.")
             break
 
-        remaining = TARGET - current_total
+        remaining = TARGET - total_new
         n = min(RESULTS_PER_QUERY, remaining)
 
-        print(f"[{q_idx + 1}/{len(ALL_QUERIES)}] '{query}'  (have {current_total}, need {remaining} more)")
+        print(f"[{q_idx + 1}/{len(ALL_QUERIES)}] '{query}'  (downloaded {total_new}/{TARGET})")
         print(f"  🔍  Searching YouTube...", flush=True)
 
         new_this_query = download_query(query, n)
         total_new += new_this_query
+        total_failed += (n - new_this_query)
 
         if new_this_query:
-            print(f"  => +{new_this_query} new  |  total on disk: {count_songs()}")
+            print(f"  => +{new_this_query} downloaded  |  {total_new}/{TARGET} total this run")
         else:
             print(f"  => no new files (all skipped or restricted)")
 
@@ -449,9 +450,10 @@ def main() -> None:
     final_count = count_songs()
     print(f"\n{'=' * 60}")
     print("Done.")
-    print(f"  New this run     : {total_new}")
-    print(f"  Total on disk    : {final_count}")
-    print(f"  Archive entries  : {count_archived()}")
+    print(f"  Successfully downloaded : {total_new}")
+    print(f"  Failed / skipped        : {total_failed}  (not counted toward target)")
+    print(f"  Total on disk           : {final_count}")
+    print(f"  Archive entries         : {count_archived()}")
     print()
     print("Next steps:")
     print("  python3 build_library.py      # update song_library.csv")
