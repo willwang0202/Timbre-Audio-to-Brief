@@ -41,6 +41,16 @@ def skip_if_too_long(info, *, incomplete):
     return None
 
 
+def postprocessor_hook(d: dict) -> None:
+    """Show FFmpeg conversion status so the terminal doesn't look frozen."""
+    if d["status"] == "started":
+        title = d.get("info_dict", {}).get("title", "…")
+        print(f"  🔄  Converting to MP3: {title[:65]}", flush=True)
+    elif d["status"] == "finished":
+        title = d.get("info_dict", {}).get("title", "…")
+        print(f"  ✅  Done:              {title[:65]}", flush=True)
+
+
 def progress_hook(d: dict) -> None:
     if d["status"] == "downloading":
         title = d.get("info_dict", {}).get("title", "…")
@@ -72,7 +82,8 @@ YDL_OPTS = {
     "retries": 3,
     "extractor_retries": 2,
     "progress_hooks": [progress_hook],
-    "match_filter": skip_if_too_long,   # skip compilations / mixes > 10 min
+    "postprocessor_hooks": [postprocessor_hook],  # show FFmpeg conversion status
+    "match_filter": skip_if_too_long,             # skip compilations / mixes > 10 min
 }
 
 # ─── Genre Queries ────────────────────────────────────────────────────────────
