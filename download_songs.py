@@ -426,29 +426,44 @@ def main() -> None:
 
     total_new = 0
     total_failed = 0
+    round_num = 0
+    q_idx = 0  # global query counter across rounds
 
-    for q_idx, query in enumerate(ALL_QUERIES):
-        current_total = count_songs()
-        if current_total >= TARGET:
-            print(f"\nTarget reached — {current_total} songs in folder. Stopping.")
+    while count_songs() < TARGET:
+        round_num += 1
+        print(f"\n--- Round {round_num} — cycling through {len(ALL_QUERIES)} queries ---")
+
+        made_progress = False
+
+        for query in ALL_QUERIES:
+            current_total = count_songs()
+            if current_total >= TARGET:
+                print(f"\nTarget reached — {current_total} songs in folder. Stopping.")
+                break
+
+            q_idx += 1
+            remaining = TARGET - current_total
+            n = min(RESULTS_PER_QUERY, remaining)
+
+            print(f"[query {q_idx}] '{query}'  ({current_total}/{TARGET} in folder, {remaining} to go)")
+            print(f"  🔍  Searching YouTube...", flush=True)
+
+            new_this_query = download_query(query, n)
+            total_new += new_this_query
+            if new_this_query:
+                total_failed += 0
+                made_progress = True
+                print(f"  => +{new_this_query} downloaded  |  {count_songs()}/{TARGET} total in folder")
+            else:
+                total_failed += 1
+                print(f"  => no new files (all skipped or restricted)")
+
+            time.sleep(QUERY_DELAY)
+
+        # If an entire round produced zero new songs, stop to avoid infinite loop
+        if not made_progress:
+            print(f"\nNo progress in round {round_num} — all queries exhausted. Stopping.")
             break
-
-        remaining = TARGET - current_total
-        n = min(RESULTS_PER_QUERY, remaining)
-
-        print(f"[{q_idx + 1}/{len(ALL_QUERIES)}] '{query}'  ({current_total}/{TARGET} in folder, {remaining} to go)")
-        print(f"  🔍  Searching YouTube...", flush=True)
-
-        new_this_query = download_query(query, n)
-        total_new += new_this_query
-        total_failed += max(0, n - new_this_query)
-
-        if new_this_query:
-            print(f"  => +{new_this_query} downloaded  |  {count_songs()}/{TARGET} total in folder")
-        else:
-            print(f"  => no new files (all skipped or restricted)")
-
-        time.sleep(QUERY_DELAY)
 
     final_count = count_songs()
     print(f"\n{'=' * 60}")
