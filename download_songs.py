@@ -33,6 +33,21 @@ TARGET = 10_000                        # stop after this many new downloads
 RESULTS_PER_QUERY = 15                 # YouTube search results to attempt per query
 QUERY_DELAY = 4.0                      # seconds between search queries (rate limiting)
 
+def progress_hook(d: dict) -> None:
+    if d["status"] == "downloading":
+        title = d.get("info_dict", {}).get("title", "…")
+        downloaded = d.get("_downloaded_bytes_str", "?")
+        total = d.get("_total_bytes_str") or d.get("_total_bytes_estimate_str", "?")
+        speed = d.get("_speed_str", "?")
+        eta = d.get("_eta_str", "?")
+        print(f"\r  ⬇  {title[:55]:<55}  {downloaded}/{total}  {speed}  ETA {eta}", end="", flush=True)
+    elif d["status"] == "finished":
+        title = d.get("info_dict", {}).get("title", "…")
+        print(f"\r  ✓  {title[:70]}", flush=True)
+    elif d["status"] == "error":
+        print(f"\r  ✗  error downloading", flush=True)
+
+
 YDL_OPTS = {
     "format": "bestaudio/best",
     "postprocessors": [{
@@ -48,6 +63,7 @@ YDL_OPTS = {
     "socket_timeout": 30,
     "retries": 3,
     "extractor_retries": 2,
+    "progress_hooks": [progress_hook],
 }
 
 # ─── Genre Queries ────────────────────────────────────────────────────────────
