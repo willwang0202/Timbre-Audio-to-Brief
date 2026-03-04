@@ -8,3 +8,4 @@ archive/
 *.pdf
 .claude/
 youtube_id_cache.json
+downloaded_ids.txt
