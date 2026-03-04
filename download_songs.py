@@ -33,6 +33,14 @@ TARGET = 10_000                        # stop after this many new downloads
 RESULTS_PER_QUERY = 15                 # YouTube search results to attempt per query
 QUERY_DELAY = 4.0                      # seconds between search queries (rate limiting)
 
+def skip_if_too_long(info, *, incomplete):
+    """Reject videos longer than 10 minutes — filters out compilations and mixes."""
+    duration = info.get("duration")
+    if duration and duration > 600:
+        return f"Skipping — too long ({duration//60:.0f} min), likely a compilation"
+    return None
+
+
 def progress_hook(d: dict) -> None:
     if d["status"] == "downloading":
         title = d.get("info_dict", {}).get("title", "…")
@@ -64,6 +72,7 @@ YDL_OPTS = {
     "retries": 3,
     "extractor_retries": 2,
     "progress_hooks": [progress_hook],
+    "match_filter": skip_if_too_long,   # skip compilations / mixes > 10 min
 }
 
 # ─── Genre Queries ────────────────────────────────────────────────────────────
