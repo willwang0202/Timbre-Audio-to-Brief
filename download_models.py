@@ -10,21 +10,24 @@ BASE_URL = "https://essentia.upf.edu/models"
 
 # 需要的模型列表
 MODELS = {
-    # Backbone (embedding extractor)
+    # Backbone A: MusiCNN (for DEAM valence/arousal)
     "msd-musicnn-1.pb": f"{BASE_URL}/feature-extractors/musicnn/msd-musicnn-1.pb",
 
-    # Arousal/Valence (DEAM dataset, range [1,9])
+    # Valence/Arousal (DEAM dataset, range [1,9]) on MusiCNN embeddings
     "deam-msd-musicnn-2.pb": f"{BASE_URL}/classification-heads/deam/deam-msd-musicnn-2.pb",
 
-    # Mood classifiers
-    "mood_happy-msd-musicnn-1.pb": f"{BASE_URL}/classification-heads/mood_happy/mood_happy-msd-musicnn-1.pb",
-    "mood_sad-msd-musicnn-1.pb": f"{BASE_URL}/classification-heads/mood_sad/mood_sad-msd-musicnn-1.pb",
-    "mood_aggressive-msd-musicnn-1.pb": f"{BASE_URL}/classification-heads/mood_aggressive/mood_aggressive-msd-musicnn-1.pb",
-    "mood_relaxed-msd-musicnn-1.pb": f"{BASE_URL}/classification-heads/mood_relaxed/mood_relaxed-msd-musicnn-1.pb",
-    "mood_party-msd-musicnn-1.pb": f"{BASE_URL}/classification-heads/mood_party/mood_party-msd-musicnn-1.pb",
+    # Backbone B: Discogs-EffNet (for mood & danceability heads)
+    "discogs-effnet-bs64-1.pb": f"{BASE_URL}/feature-extractors/discogs-effnet/discogs-effnet-bs64-1.pb",
 
-    # Danceability
-    "danceability-msd-musicnn-1.pb": f"{BASE_URL}/classification-heads/danceability/danceability-msd-musicnn-1.pb",
+    # Mood classifiers on EffNet embeddings
+    "mood_happy-discogs-effnet-1.pb": f"{BASE_URL}/classification-heads/mood_happy/mood_happy-discogs-effnet-1.pb",
+    "mood_sad-discogs-effnet-1.pb": f"{BASE_URL}/classification-heads/mood_sad/mood_sad-discogs-effnet-1.pb",
+    "mood_aggressive-discogs-effnet-1.pb": f"{BASE_URL}/classification-heads/mood_aggressive/mood_aggressive-discogs-effnet-1.pb",
+    "mood_relaxed-discogs-effnet-1.pb": f"{BASE_URL}/classification-heads/mood_relaxed/mood_relaxed-discogs-effnet-1.pb",
+    "mood_party-discogs-effnet-1.pb": f"{BASE_URL}/classification-heads/mood_party/mood_party-discogs-effnet-1.pb",
+
+    # Danceability on EffNet embeddings
+    "danceability-discogs-effnet-1.pb": f"{BASE_URL}/classification-heads/danceability/danceability-discogs-effnet-1.pb",
 }
 
 def ensure_models():
