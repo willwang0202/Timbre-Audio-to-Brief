@@ -34,7 +34,9 @@ RESULTS_PER_QUERY = 15                 # YouTube search results to attempt per q
 QUERY_DELAY = 4.0                      # seconds between search queries (rate limiting)
 
 def skip_if_too_long(info, *, incomplete):
-    """Reject videos longer than 10 minutes — filters out compilations and mixes."""
+    """Reject live streams and videos longer than 10 minutes (compilations/mixes)."""
+    if info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"):
+        return "Skipping — live stream or upcoming broadcast"
     duration = info.get("duration")
     if duration and duration > 600:
         return f"Skipping — too long ({duration//60:.0f} min), likely a compilation"
