@@ -12,6 +12,8 @@ license: mit
 
 # 🎵 Timbre Audio-to-Brief Engine
 
+[![Hugging Face Spaces](https://img.shields.io/badge/🤗%20Hugging%20Face-Live%20Demo-blue)](https://huggingface.co/spaces/WCA0202/Timbre-Audio-to-Brief)
+
 **Timbre** bridges the gap between clients and musicians. Describe a mood or scene in natural language, and the engine recommends reference tracks with matching acoustic characteristics — then auto-generates an **Acoustic Specification Brief** that musicians can actually execute.
 
 > 輸入情緒描述，AI 幫你找到最匹配的參考音樂，並自動生成聲學規格建議書。
