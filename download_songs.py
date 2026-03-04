@@ -41,6 +41,36 @@ def skip_if_too_long(info, *, incomplete):
     return None
 
 
+class YdlLogger:
+    """Custom yt-dlp logger — surfaces every meaningful step so the terminal never looks frozen."""
+
+    def debug(self, msg):
+        if msg.startswith("[debug]"):
+            return  # skip low-level internal debug noise
+        if "has already been recorded" in msg:
+            print(f"  ⏭️   Already downloaded, skipping", flush=True)
+        elif "Downloading API JSON" in msg or "Downloading webpage" in msg:
+            # Extract video ID or search label from the message
+            label = msg.split("] ", 1)[-1].split(":")[0].strip()
+            print(f"  📄  Fetching info: {label}", flush=True)
+        elif "[youtube:search]" in msg and "query" in msg.lower():
+            print(f"  🔍  Querying YouTube search...", flush=True)
+        elif "Destination:" in msg:
+            dest = msg.split("Destination:")[-1].strip()
+            print(f"  💾  Saving: {dest[:80]}", flush=True)
+        elif msg.strip():
+            # Show any other yt-dlp messages not covered above
+            print(f"  ℹ️   {msg.strip()[:100]}", flush=True)
+
+    def warning(self, msg):
+        if msg.strip():
+            print(f"  ⚠️   {msg.strip()[:100]}", flush=True)
+
+    def error(self, msg):
+        if msg.strip():
+            print(f"  ✗   {msg.strip()[:100]}", flush=True)
+
+
 def postprocessor_hook(d: dict) -> None:
     """Show FFmpeg conversion status so the terminal doesn't look frozen."""
     if d["status"] == "started":
@@ -81,6 +111,7 @@ YDL_OPTS = {
     "socket_timeout": 30,
     "retries": 3,
     "extractor_retries": 2,
+    "logger": YdlLogger(),                        # log every internal step
     "progress_hooks": [progress_hook],
     "postprocessor_hooks": [postprocessor_hook],  # show FFmpeg conversion status
     "match_filter": skip_if_too_long,             # skip compilations / mixes > 10 min
