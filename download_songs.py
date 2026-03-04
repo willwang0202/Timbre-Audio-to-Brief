@@ -401,6 +401,7 @@ def main() -> None:
         n = min(RESULTS_PER_QUERY, remaining)
 
         print(f"[{q_idx + 1}/{len(ALL_QUERIES)}] '{query}'  (have {current_total}, need {remaining} more)")
+        print(f"  🔍  Searching YouTube...", flush=True)
 
         new_this_query = download_query(query, n)
         total_new += new_this_query
