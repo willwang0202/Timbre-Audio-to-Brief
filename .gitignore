@@ -9,3 +9,4 @@ archive/
 .claude/
 youtube_id_cache.json
 downloaded_ids.txt
+top_10000_songs.csv

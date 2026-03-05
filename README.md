@@ -16,7 +16,7 @@ license: mit
 
 **Timbre** bridges the gap between clients and musicians. Describe a mood or scene in natural language, and the engine recommends reference tracks with matching acoustic characteristics — then auto-generates an **Acoustic Specification Brief** that musicians can actually execute.
 
-> 輸入情緒描述，AI 幫你找到最匹配的參考音樂，並自動生成聲學規格建議書。
+> Enter descriptive emotions, it helps you find music that fits, and generate an acoustic brief for clients and musicians. 
 
 ## Features
 
@@ -56,10 +56,23 @@ license: mit
 ## Tech Stack
 
 - **Emotion UI**: Custom interactive bubble physics engine (vanilla JS, no dependencies)
-- **Audio Analysis**: [Essentia](https://essentia.upf.edu/) (MusicNN models for mood, valence, arousal, danceability)
-- **Translation**: [Argos Translate](https://github.com/argosopentech/argos-translate) (Chinese → English)
-- **UI**: [Gradio](https://gradio.app/) + FastAPI custom route for the Emotion Explorer
+- **Audio Analysis**: [Essentia](https://essentia.upf.edu/) — Discogs-EffNet for mood/danceability heads, MusiCNN + DEAM for valence/arousal
+- **Recommendation**: sentence-transformers (multilingual) for semantic mood matching
+- **UI**: [Gradio](https://gradio.app/) with Emotion Explorer iframe
 - **Deployment**: Hugging Face Spaces
+
+## Building / training the library
+
+With audio files in `songs/` (e.g. `.wav` or `.mp3`), build the library and extract features:
+
+```bash
+python build_library.py      # Scan songs/ → song_library.csv
+python download_models.py    # Download Essentia models (first time only)
+python extract_features.py   # Extract features → song_features.csv (preserves existing emotion labels)
+python get_song_emotions.py  # Assign/refresh emotion column in song_features.csv
+```
+
+Then run the app (see Local Development below).
 
 ## Local Development
 
