@@ -20,6 +20,7 @@ import re
 import sys
 import time
 import shutil
+import random
 
 import pandas as pd
 import yt_dlp
@@ -31,6 +32,13 @@ SONGS_DIR = "songs"
 ARCHIVE_FILE = "downloaded_ids_v2.txt"
 TARGET_COUNT = 10_000
 MP3_BITRATE = "128"
+
+# Anti-bot / rate-limit mitigation (YouTube may return 403 without cookies/throttling)
+COOKIES_BROWSER = os.environ.get("TIMBRE_COOKIES_BROWSER", "chrome").strip().lower()
+SLEEP_BETWEEN_SONGS_MIN_S = float(os.environ.get("TIMBRE_SLEEP_MIN_S", "1.5"))
+SLEEP_BETWEEN_SONGS_MAX_S = float(os.environ.get("TIMBRE_SLEEP_MAX_S", "4.0"))
+MAX_403_RETRIES = int(os.environ.get("TIMBRE_MAX_403_RETRIES", "6"))
+BACKOFF_BASE_S = float(os.environ.get("TIMBRE_BACKOFF_BASE_S", "15"))
 
 # ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -170,6 +178,9 @@ def download_one(
         "socket_timeout": 30,
         "retries": 3,
         "extractor_retries": 2,
+        # Slow down requests to reduce 403s
+        "sleep_interval": 1,
+        "max_sleep_interval": 3,
         "progress_hooks": [make_progress_hook(state)],
         "postprocessor_hooks": [make_postprocessor_hook(state)],
         "match_filter": skip_if_too_long,
@@ -182,22 +193,53 @@ def download_one(
     if os.path.isdir(songs_dir):
         before = set(f for f in os.listdir(songs_dir) if f.endswith(".mp3"))
 
-    try:
-        state.phase = "fetching"
-        print(
-            f"  [{state.current}/{state.total}] {track_name[:50]:<50} "
-            f"popularity={popularity}  📄 Fetching info  ETA total: {state.eta_remaining()}",
-            flush=True,
-        )
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([search_url])
-    except Exception as e:
-        print(
-            f"\r  [{state.current}/{state.total}] {track_name[:50]:<50} "
-            f"popularity={popularity}  ❌ Error: {e}",
-            flush=True,
-        )
-        return False
+    # Cookies from browser help a lot with 403s (Chrome/Safari supported depending on local setup).
+    cookies_enabled = False
+    if COOKIES_BROWSER:
+        try:
+            ydl_opts["cookiesfrombrowser"] = (COOKIES_BROWSER,)
+            cookies_enabled = True
+        except Exception:
+            cookies_enabled = False
+
+    def _is_403(err: Exception) -> bool:
+        s = str(err)
+        return ("HTTP Error 403" in s) or ("403" in s and "Forbidden" in s)
+
+    attempts = 0
+    while True:
+        try:
+            state.phase = "fetching"
+            cookie_note = f" cookies={COOKIES_BROWSER}" if cookies_enabled else ""
+            print(
+                f"  [{state.current}/{state.total}] {track_name[:50]:<50} "
+                f"popularity={popularity}  📄 Fetching info{cookie_note}  ETA total: {state.eta_remaining()}",
+                flush=True,
+            )
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([search_url])
+            break
+        except Exception as e:
+            attempts += 1
+            if _is_403(e) and attempts <= MAX_403_RETRIES:
+                backoff = BACKOFF_BASE_S * (2 ** (attempts - 1))
+                jitter = random.uniform(0, min(10.0, backoff * 0.1))
+                wait_s = backoff + jitter
+                print(
+                    f"\r  [{state.current}/{state.total}] {track_name[:50]:<50} "
+                    f"popularity={popularity}  ⚠️  403 blocked (attempt {attempts}/{MAX_403_RETRIES}) — "
+                    f"sleeping {wait_s:.0f}s then retry",
+                    flush=True,
+                )
+                time.sleep(wait_s)
+                continue
+
+            print(
+                f"\r  [{state.current}/{state.total}] {track_name[:50]:<50} "
+                f"popularity={popularity}  ❌ Error: {e}",
+                flush=True,
+            )
+            return False
 
     if os.path.isdir(songs_dir):
         after = set(f for f in os.listdir(songs_dir) if f.endswith(".mp3"))
@@ -226,6 +268,9 @@ def main() -> None:
     print(f"Output dir:      {SONGS_DIR}/")
     print(f"Format:         MP3 @ {MP3_BITRATE} kbps (~5 MB per song)")
     print(f"Archive (resume): {archive_path}")
+    if COOKIES_BROWSER:
+        print(f"Cookies:         from browser = {COOKIES_BROWSER}  (set TIMBRE_COOKIES_BROWSER to change)")
+    print(f"Throttle:        sleep {SLEEP_BETWEEN_SONGS_MIN_S:.1f}–{SLEEP_BETWEEN_SONGS_MAX_S:.1f}s between songs")
     print()
 
     start = time.time()
@@ -250,6 +295,7 @@ def main() -> None:
             run_state,
         ):
             ok += 1
+        time.sleep(random.uniform(SLEEP_BETWEEN_SONGS_MIN_S, SLEEP_BETWEEN_SONGS_MAX_S))
 
     elapsed = time.time() - start
     count = sum(1 for f in os.listdir(SONGS_DIR) if f.endswith(".mp3")) if os.path.isdir(SONGS_DIR) else 0
