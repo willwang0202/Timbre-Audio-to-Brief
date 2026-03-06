@@ -409,7 +409,7 @@
 <div id="instruction">點擊泡泡開始探索</div>
 <div id="blend-btn">✦ 融合這些情緒</div>
 <button id="reset-btn">重新開始</button>
-<button id="lang-btn"><span class="lang-active" id="lang-zh">中</span><span class="lang-sep">/</span><span class="lang-inactive" id="lang-en">EN</span></button>
+<button id="lang-btn"><span class="lang-inactive" id="lang-zh">中</span><span class="lang-sep">/</span><span class="lang-active" id="lang-en">EN</span></button>
 
 <div id="constellation-panel">
   <div class="const-title">你的情緒星圖</div>
@@ -537,7 +537,7 @@ const BLEND_COLOR = {
 };
 
 // ── Active language helpers ──────────────────────
-let currentLang = 'zh';
+let currentLang = 'en';
 function L()       { return LANG_DATA[currentLang]; }
 function EMOTIONS() {
   const e = L().emotions;
@@ -1486,22 +1486,33 @@ function generateAcousticBrief(songs, lang) {
 }
 
 // ── Role toggle state ────────────────────────────
-let _lastSongs = [];
+const SONGS_PER_PAGE = 5;
+const TOTAL_RECOMMENDATIONS = 25;   // fetch this many, paginate by 5
+
+let _allRecommendations = [];      // full list for current emotion
+let _recommendationPage = 0;       // 0 = top 5, 1 = next 5, ...
 let _lastLang  = 'zh';
 let currentRole = 'client';   // 'client' | 'musician'
 
+function getCurrentPageSongs() {
+  const start = _recommendationPage * SONGS_PER_PAGE;
+  return _allRecommendations.slice(start, start + SONGS_PER_PAGE);
+}
+
 function renderRoleView(role) {
   const zh          = _lastLang === 'zh';
-  const songs       = _lastSongs;
+  const songs       = getCurrentPageSongs();
+  const startIdx    = _recommendationPage * SONGS_PER_PAGE;
   const searchLbl   = zh ? '在 YouTube 搜尋' : 'Search on YouTube';
   const tracksTitle = zh ? '🎵 參考音樂'     : '🎵 Reference Tracks';
 
   const tracksHtml = songs.map((s, i) => {
+    const num = startIdx + i + 1;
     const ytUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(s.t);
     return `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);
                  border-radius:9px;padding:11px 13px;margin:0 0 8px;">
       <div style="font-size:13px;font-weight:500;margin-bottom:8px;line-height:1.4;
-                  color:rgba(232,228,240,0.9);">${i+1}. ${s.t}</div>
+                  color:rgba(232,228,240,0.9);">${num}. ${s.t}</div>
       <a href="${ytUrl}" target="_blank" rel="noopener"
          style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;
                 background:rgba(255,65,54,0.10);border:1px solid rgba(255,65,54,0.28);
@@ -1544,6 +1555,47 @@ function renderRoleView(role) {
     mBtn.style.background = role === 'musician' ? 'rgba(255,255,255,0.10)' : 'transparent';
     mBtn.style.color      = role === 'musician' ? 'rgba(232,228,240,0.95)' : 'rgba(232,228,240,0.40)';
   }
+  updateRecommendationNav();
+}
+
+function goToRecommendationPage(page) {
+  _recommendationPage = page;
+  renderRoleView(currentRole);
+}
+
+function updateRecommendationNav() {
+  const total = _allRecommendations.length;
+  const totalPages = Math.ceil(total / SONGS_PER_PAGE) || 1;
+  const page = _recommendationPage;
+  const start = page * SONGS_PER_PAGE + 1;
+  const end = Math.min((page + 1) * SONGS_PER_PAGE, total);
+  const prevDisabled = page <= 0;
+  const nextDisabled = page >= totalPages - 1;
+
+  const topBtn = document.getElementById('nav-top-btn');
+  const prevBtn = document.getElementById('nav-prev-btn');
+  const nextBtn = document.getElementById('nav-next-btn');
+  const navLabel = document.getElementById('nav-page-label');
+  if (!navLabel) return;
+
+  navLabel.textContent = _lastLang === 'zh'
+    ? `第 ${start}–${end} 首，共 ${total} 首`
+    : `Songs ${start}–${end} of ${total}`;
+  if (topBtn) {
+    topBtn.disabled = page <= 0;
+    topBtn.style.opacity = page <= 0 ? '0.5' : '1';
+    topBtn.style.cursor = page <= 0 ? 'not-allowed' : 'pointer';
+  }
+  if (prevBtn) {
+    prevBtn.disabled = prevDisabled;
+    prevBtn.style.opacity = prevDisabled ? '0.5' : '1';
+    prevBtn.style.cursor = prevDisabled ? 'not-allowed' : 'pointer';
+  }
+  if (nextBtn) {
+    nextBtn.disabled = nextDisabled;
+    nextBtn.style.opacity = nextDisabled ? '0.5' : '1';
+    nextBtn.style.cursor = nextDisabled ? 'not-allowed' : 'pointer';
+  }
 }
 
 function showCombinedResults() {
@@ -1552,17 +1604,25 @@ function showCombinedResults() {
   const zh         = lang === 'zh';
   const resultsDiv = document.getElementById('music-results');
 
-  _lastSongs = findTopSongs(getEmotionKey(pathLabels), 3);
+  _allRecommendations = findTopSongs(getEmotionKey(pathLabels), TOTAL_RECOMMENDATIONS);
+  _recommendationPage = 0;
   _lastLang  = lang;
 
   const summaryLbl  = zh ? '你的情緒路徑' : 'Your Emotion Path';
   const pathText    = pathLabels.join('  →  ');
   const clientLbl   = zh ? '🎬 業主'      : '🎬 Client';
   const musicianLbl = zh ? '🎸 音樂人'    : '🎸 Musician';
+  const topLbl      = zh ? '前 5 首'     : 'Top 5';
+  const prevLbl     = zh ? '上一頁'      : 'Previous';
+  const nextLbl     = zh ? '下一頁'      : 'Next';
 
   const btnBase = `padding:7px 20px;border-radius:30px;font-size:11px;
     font-family:'Outfit',sans-serif;letter-spacing:0.1em;
     cursor:pointer;border:none;transition:all 0.2s ease;`;
+  const navBtnBase = `padding:6px 14px;border-radius:20px;font-size:11px;
+    font-family:'Outfit',sans-serif;letter-spacing:0.06em;
+    cursor:pointer;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.06);
+    color:rgba(232,228,240,0.9);transition:all 0.2s ease;`;
 
   resultsDiv.innerHTML = `
     <div style="font-family:'Outfit',sans-serif;color:#e8e4f0;padding:4px 2px;">
@@ -1591,6 +1651,14 @@ function showCombinedResults() {
                 style="${btnBase}background:transparent;color:rgba(232,228,240,0.40);">
           ${musicianLbl}
         </button>
+      </div>
+
+      <!-- Recommendation nav: Top 5 | Previous | Next -->
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px;">
+        <span id="nav-page-label" style="font-size:11px;color:rgba(232,228,240,0.5);"></span>
+        <button id="nav-top-btn" type="button" onclick="goToRecommendationPage(0)" style="${navBtnBase}">${topLbl}</button>
+        <button id="nav-prev-btn" type="button" onclick="goToRecommendationPage(_recommendationPage-1)" style="${navBtnBase}">← ${prevLbl}</button>
+        <button id="nav-next-btn" type="button" onclick="goToRecommendationPage(_recommendationPage+1)" style="${navBtnBase}">${nextLbl} →</button>
       </div>
 
       <!-- Role content (swapped by renderRoleView) -->

@@ -195,9 +195,9 @@ I18N = {
 }
 
 
-def t(key, lang="zh"):
+def t(key, lang="en"):
     """取得翻譯文字"""
-    return I18N.get(lang, I18N["zh"]).get(key, key)
+    return I18N.get(lang, I18N["en"]).get(key, key)
 
 
 # ── YouTube 搜尋與嵌入 ──────────────────────────────────────
@@ -557,30 +557,30 @@ with gr.Blocks(title="Timbre Audio-to-Brief Engine") as demo:
         # ── Tab 2: Text Search (original text-based interface) ───────
         with gr.Tab("📝 Text Search"):
             # 語言狀態
-            lang_state = gr.State("zh")
+            lang_state = gr.State("en")
 
             # 頂部：標題 + 語言切換
             with gr.Row():
                 with gr.Column(scale=5):
-                    title_md = gr.Markdown("# 🎵 Timbre 聲學規格引擎")
-                    subtitle_md = gr.Markdown("輸入情緒描述，AI 幫你找到最匹配的參考音樂，並自動生成聲學規格建議書。")
+                    title_md = gr.Markdown("# 🎵 Timbre Audio-to-Brief Engine")
+                    subtitle_md = gr.Markdown("Describe a mood or scene, and AI will find the best-matching reference music and auto-generate an acoustic specification brief.")
                 with gr.Column(scale=1, min_width=120):
                     lang_toggle = gr.Radio(
                         choices=["中文", "English"],
-                        value="中文",
+                        value="English",
                         label="Language / 語言",
                         interactive=True,
                     )
 
             mood_input = gr.Textbox(
-                placeholder="描述你的情緒或場景，例如：深夜開車，有點孤獨...",
-                label="情緒描述",
+                placeholder="Describe the mood or scene, e.g.: late night drive, feeling lonely...",
+                label="Mood Description",
                 lines=2
             )
 
             with gr.Row():
-                client_btn = gr.Button("🎬 我是業主（找參考音樂）", variant="primary")
-                musician_btn = gr.Button("🎸 我是音樂人（看聲學規格）", variant="secondary")
+                client_btn = gr.Button("🎬 Client — Find Reference Music", variant="primary")
+                musician_btn = gr.Button("🎸 Musician — Acoustic Spec Brief", variant="secondary")
 
             with gr.Row():
                 with gr.Column(scale=2):
