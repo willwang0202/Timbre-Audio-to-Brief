@@ -196,8 +196,9 @@
     background: rgba(7,8,15,0.95);
     backdrop-filter: blur(20px);
     display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    padding: 40px;
+    align-items: center; justify-content: flex-start;
+    padding: 30px 40px;
+    overflow-y: auto;
     opacity: 0; pointer-events: none;
     transition: opacity 0.8s ease;
   }
@@ -212,6 +213,7 @@
     letter-spacing: 0.35em;
     text-transform: uppercase;
     color: var(--muted);
+    margin-top: 20px;
     margin-bottom: 10px;
   }
 
@@ -226,7 +228,7 @@
 
   .const-map {
     display: flex; align-items: center; gap: 0;
-    margin-bottom: 52px;
+    margin-bottom: 28px;
     flex-wrap: wrap; justify-content: center;
   }
 
@@ -419,7 +421,7 @@
     <button class="btn-primary" id="save-btn">儲存至日記</button>
     <button class="btn-primary" id="restart-btn">再次探索</button>
   </div>
-  <div id="music-results" style="display:none; margin-top:28px; max-width:760px; width:100%; max-height:52vh; overflow-y:auto; border-radius:12px; text-align:left;"></div>
+  <div id="music-results" style="display:none; margin-top:28px; max-width:760px; width:100%; max-height:65vh; overflow-y:auto; border-radius:12px; text-align:left;"></div>
 </div>
 
 <script>
