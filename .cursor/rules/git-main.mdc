@@ -1,0 +1,12 @@
+---
+description: Always work, commit, and push on the main branch
+alwaysApply: true
+---
+
+# Git: Work on main
+
+- **Goal**: All changes are committed and pushed to the `main` branch on both remotes (origin = Hugging Face, github = GitHub).
+- **When `main` is checked out in this workspace**: Run `git checkout main` (or `git switch main`) before making changes. Commit on `main`, then push: `git push origin main` and `git push github main`. If behind remote: `git pull origin main --rebase`, resolve conflicts, then push both.
+- **When in a worktree with detached HEAD** (e.g. `main` is checked out in the primary repo): Commit on the current HEAD, then push that commit to `main` on both remotes: `git push origin HEAD:main` and `git push github HEAD:main`. If the remote has new commits, run `git fetch origin main` then `git rebase origin/main`, resolve conflicts, then push both with `HEAD:main`.
+- **After any commit**: Always push to **both** remotes so Hugging Face and GitHub stay in sync.
+- Prefer not leaving the repo in a detached HEAD state when the user expects work on main; if main cannot be checked out (worktree), push to `main` via `HEAD:main` so remotes’ `main` is updated.
