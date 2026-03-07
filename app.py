@@ -8,6 +8,61 @@ import pandas as pd
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+# ── Language Detection ──────────────────────────────────────
+def detect_language(title: str) -> tuple[str, str]:
+    """
+    Detect language from song title based on character scripts.
+    Returns (flag_emoji, language_name).
+    """
+    # Japanese (hiragana or katakana present)
+    if re.search(r'[\u3040-\u309F\u30A0-\u30FF]', title):
+        return '🇯🇵', 'Japanese'
+    
+    # Korean (hangul)
+    if re.search(r'[\uAC00-\uD7AF\u1100-\u11FF]', title):
+        return '🇰🇷', 'Korean'
+    
+    # Thai
+    if re.search(r'[\u0E00-\u0E7F]', title):
+        return '🇹🇭', 'Thai'
+    
+    # Arabic
+    if re.search(r'[\u0600-\u06FF\u0750-\u077F]', title):
+        return '🇸🇦', 'Arabic'
+    
+    # Hindi/Devanagari
+    if re.search(r'[\u0900-\u097F]', title):
+        return '🇮🇳', 'Hindi'
+    
+    # Cyrillic (Russian)
+    if re.search(r'[\u0400-\u04FF]', title):
+        return '🇷🇺', 'Russian'
+    
+    # Chinese (CJK without Japanese kana - check after Japanese)
+    if re.search(r'[\u4E00-\u9FFF]', title):
+        return '🇨🇳', 'Chinese'
+    
+    # Latin-based languages - detect by common patterns/characters
+    # Spanish (ñ, ¿, ¡, or common Spanish words)
+    if re.search(r'[ñ¿¡]', title, re.I) or re.search(r'\b(el|la|los|las|del|con|por|para|que|como|pero)\b', title, re.I):
+        return '🇪🇸', 'Spanish'
+    
+    # Portuguese (ã, õ, ç patterns)
+    if re.search(r'[ãõ]', title, re.I) or re.search(r'\b(não|você|são|também|até)\b', title, re.I):
+        return '🇧🇷', 'Portuguese'
+    
+    # French (common accents and words)
+    if re.search(r'[àâæçéèêëîïôœùûü]', title, re.I) or re.search(r'\b(le|la|les|du|des|et|en|un|une|pour|avec|sur|dans)\b', title, re.I):
+        return '🇫🇷', 'French'
+    
+    # German (ß, ä, ö, ü patterns)
+    if re.search(r'[ßäöü]', title, re.I) or re.search(r'\b(und|der|die|das|ist|für|mit|auf|ich|du|wir)\b', title, re.I):
+        return '🇩🇪', 'German'
+    
+    # Default to English for remaining Latin-based text
+    return '🇺🇸', 'English'
+
+
 # ── Load Emotion Explorer HTML at startup ───────────────────
 import json as _json
 
@@ -364,6 +419,8 @@ def recommend_for_client(mood, lang):
         title = song_library.iloc[idx]['title']
         filename = song_library.iloc[idx]['filename']
         local_path = get_local_audio_path(filename)
+        flag, lang_name = detect_language(title)
+        lang_tag = f'<span style="display:inline-block;margin-left:10px;padding:2px 8px;background:rgba(0,0,0,0.06);border-radius:12px;font-size:12px;font-weight:400;color:#555;">{flag} {lang_name}</span>'
         
         if local_path:
             player = f'<div style="margin: 8px 0;"><audio controls src="file={local_path}" style="width:100%"></audio></div>'
@@ -373,7 +430,7 @@ def recommend_for_client(mood, lang):
 
         html += f'''
         <div class="song-card">
-            <h3>{i+1}. {title}</h3>
+            <h3>{i+1}. {title}{lang_tag}</h3>
             {player}
         </div>'''
 
@@ -483,6 +540,8 @@ def recommend_for_musician(mood, lang):
         title = song_library.iloc[idx]['title']
         filename = song_library.iloc[idx]['filename']
         feature_row = song_features[song_features['title'] == title]
+        flag, lang_name = detect_language(title)
+        lang_tag = f'<span style="display:inline-block;margin-left:10px;padding:2px 8px;background:rgba(0,0,0,0.06);border-radius:12px;font-size:12px;font-weight:400;color:#555;">{flag} {lang_name}</span>'
         
         local_path = get_local_audio_path(filename)
         if local_path:
@@ -492,7 +551,7 @@ def recommend_for_musician(mood, lang):
             player = build_player_html(title, video_id, lang)
 
         html += f'<div class="song-card">'
-        html += f'<h3>{i+1}. {title}</h3>'
+        html += f'<h3>{i+1}. {title}{lang_tag}</h3>'
         html += f'<div class="score">{t("similarity", lang)}：{score:.3f}</div>'
         html += player
 
