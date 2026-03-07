@@ -197,8 +197,9 @@
     backdrop-filter: blur(20px);
     display: flex; flex-direction: column;
     align-items: center; justify-content: flex-start;
-padding: 24px 40px;
+    padding: 24px 40px 40px;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     opacity: 0; pointer-events: none;
     transition: opacity 0.8s ease;
   }
@@ -421,7 +422,7 @@ margin-bottom: 24px;
     <button class="btn-primary" id="save-btn">儲存至日記</button>
     <button class="btn-primary" id="restart-btn">再次探索</button>
   </div>
-<div id="music-results" style="display:none; margin-top:28px; max-width:760px; width:100%; max-height:58vh; overflow-y:auto; border-radius:12px; text-align:left;"></div>
+<div id="music-results" style="display:none; margin-top:28px; max-width:760px; width:100%; border-radius:12px; text-align:left;"></div>
 </div>
 
 <script>
