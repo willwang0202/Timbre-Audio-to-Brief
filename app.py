@@ -75,9 +75,9 @@ try:
     print(f"[Timbre] emotion_ui.html read ({len(_raw):,} chars)")
 except Exception as _e:
     print(f"[Timbre] WARNING: Could not load emotion_ui.html: {_e}")
-from download_models import ensure_models
-ensure_models()  # 確保模型已下載（HF Spaces 首次啟動時）
-from recommend_v2 import recommend, song_library, song_features
+# Essentia models are only needed for offline extract_features.py, not at runtime.
+# Do NOT call ensure_models() here — it downloads ~500MB of unused .pb files.
+from recommend_v2 import recommend, song_data
 
 # ── YouTube ID cache ────────────────────────────────────────
 _YT_CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "youtube_id_cache.json")
@@ -105,7 +105,7 @@ if _raw:
             "d":  round(float(r["danceability"]),    3),
             "yt": _yt_cache.get(str(r["title"])),   # None if not yet cached
         }
-        for _, r in song_features.iterrows()
+        for _, r in song_data.iterrows()
     ]
     _yt_ok = sum(1 for s in _songs_compact if s["yt"])
     print(f"[Timbre] {_yt_ok}/{len(_songs_compact)} songs have cached YouTube IDs")
@@ -309,12 +309,13 @@ def get_youtube_search_url(title):
 def build_player_html(title, video_id, lang="zh"):
     """生成嵌入式 YouTube 播放器 HTML"""
     if video_id:
+        safe_id = html_lib.escape(video_id, quote=True)
         return f'''
         <div style="margin: 8px 0;">
-            <iframe width="100%" height="200" 
-                src="https://www.youtube.com/embed/{video_id}" 
-                frameborder="0" 
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+            <iframe width="100%" height="200"
+                src="https://www.youtube.com/embed/{safe_id}"
+                frameborder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowfullscreen>
             </iframe>
         </div>'''
@@ -415,22 +416,22 @@ def recommend_for_client(mood, lang):
     html = CARD_STYLE
     html += f"<h2 style='color:#212529;'>{t('client_header', lang)}</h2>"
 
-    for i, (idx, score) in enumerate(results):
-        title = song_library.iloc[idx]['title']
-        filename = song_library.iloc[idx]['filename']
+    for i, r in enumerate(results):
+        title = r["title"]
+        filename = r["filename"]
         local_path = get_local_audio_path(filename)
         flag, lang_name = detect_language(title)
         lang_tag = f'<span style="display:inline-block;margin-left:10px;padding:2px 8px;background:rgba(0,0,0,0.06);border-radius:12px;font-size:12px;font-weight:400;color:#555;">{flag} {lang_name}</span>'
-        
         if local_path:
             player = f'<div style="margin: 8px 0;"><audio controls src="file={local_path}" style="width:100%"></audio></div>'
         else:
-            video_id = get_youtube_video_id(title)
+            video_id = _yt_cache.get(title) or get_youtube_video_id(title)
             player = build_player_html(title, video_id, lang)
 
+        safe_title = html_lib.escape(title)
         html += f'''
         <div class="song-card">
-            <h3>{i+1}. {title}{lang_tag}</h3>
+            <h3>{i+1}. {safe_title}{lang_tag}</h3>
             {player}
         </div>'''
 
@@ -536,50 +537,46 @@ def recommend_for_musician(mood, lang):
     html += f"<h2 style='color:#212529;'>{t('musician_header', lang)}</h2>"
     feature_rows = []
 
-    for i, (idx, score) in enumerate(results):
-        title = song_library.iloc[idx]['title']
-        filename = song_library.iloc[idx]['filename']
-        feature_row = song_features[song_features['title'] == title]
+    for i, r in enumerate(results):
+        title = r["title"]
+        filename = r["filename"]
+        score = r["score"]
+        feat = r["features"]
+
         flag, lang_name = detect_language(title)
         lang_tag = f'<span style="display:inline-block;margin-left:10px;padding:2px 8px;background:rgba(0,0,0,0.06);border-radius:12px;font-size:12px;font-weight:400;color:#555;">{flag} {lang_name}</span>'
-        
         local_path = get_local_audio_path(filename)
         if local_path:
             player = f'<div style="margin: 8px 0;"><audio controls src="file={local_path}" style="width:100%"></audio></div>'
         else:
-            video_id = get_youtube_video_id(title)
+            video_id = _yt_cache.get(title) or get_youtube_video_id(title)
             player = build_player_html(title, video_id, lang)
 
+        safe_title = html_lib.escape(title)
         html += f'<div class="song-card">'
-        html += f'<h3>{i+1}. {title}{lang_tag}</h3>'
+        html += f'<h3>{i+1}. {safe_title}{lang_tag}</h3>'
         html += f'<div class="score">{t("similarity", lang)}：{score:.3f}</div>'
         html += player
 
-        if not feature_row.empty:
-            row = feature_row.iloc[0]
-            feature_rows.append(row)
-            html += f'''
+        feature_rows.append(feat)
+        html += f'''
             <div class="feat-detail">
-                BPM：{row['bpm']:.0f} &nbsp;│&nbsp;
-                Valence：{row['valence']:.2f} &nbsp;│&nbsp;
-                Arousal：{row['arousal']:.2f}<br>
-                Mood — 
-                Happy {row['mood_happy']:.2f} / 
-                Sad {row['mood_sad']:.2f} / 
-                Aggressive {row['mood_aggressive']:.2f} / 
-                Relaxed {row['mood_relaxed']:.2f} / 
-                Party {row['mood_party']:.2f}<br>
-                Danceability：{row['danceability']:.2f}
+                BPM：{feat["bpm"]:.0f} &nbsp;│&nbsp;
+                Valence：{feat["valence"]:.2f} &nbsp;│&nbsp;
+                Arousal：{feat["arousal"]:.2f}<br>
+                Mood —
+                Happy {feat["mood_happy"]:.2f} /
+                Sad {feat["mood_sad"]:.2f} /
+                Aggressive {feat["mood_aggressive"]:.2f} /
+                Relaxed {feat["mood_relaxed"]:.2f} /
+                Party {feat["mood_party"]:.2f}<br>
+                Danceability：{feat["danceability"]:.2f}
             </div>'''
         html += '</div>'
 
     # 聲學規格書
     if feature_rows:
-        avg = pd.DataFrame(feature_rows)[
-            ['bpm', 'valence', 'arousal',
-             'mood_happy', 'mood_sad', 'mood_aggressive',
-             'mood_relaxed', 'mood_party', 'danceability']
-        ].mean()
+        avg = pd.DataFrame(feature_rows).mean()
 
         html += f'''
         <div class="spec-section">

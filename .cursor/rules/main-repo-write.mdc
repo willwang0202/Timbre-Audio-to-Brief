@@ -1,0 +1,11 @@
+---
+description: Always write and update files in the main repository, not in worktrees
+alwaysApply: true
+---
+
+# Write to main repo
+
+- **Path**: Use the **main repository** for all file edits and new files:  
+  **`/Users/edu/Documents/Code/Timbre-Audio-to-Brief/`**
+- When editing or creating any project file, use that path (e.g. `/Users/edu/Documents/Code/Timbre-Audio-to-Brief/download_songs_v2.py`, not a worktree path like `.../worktrees/.../xqe/download_songs_v2.py`).
+- This ensures changes always land in the main repo where you run scripts (e.g. `download_songs_v2.py`) and where `main` is checked out for git.

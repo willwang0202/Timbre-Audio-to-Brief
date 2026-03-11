@@ -121,13 +121,16 @@ for i, row in song_library.iterrows():
     print(f"[{i+1}/{len(song_library)}] Processing: {row['title']}")
 
     try:
-        audio = MonoLoader(filename=filepath, sampleRate=16000, resampleQuality=4)()
+        # 16 kHz for Essentia EffNet / MusiCNN models
+        audio_16k = MonoLoader(filename=filepath, sampleRate=16000, resampleQuality=4)()
+        # 44.1 kHz for BPM estimation (PercivalBpmEstimator expects native sample rate)
+        audio_44k = MonoLoader(filename=filepath, sampleRate=44100, resampleQuality=4)()
 
         # EffNet embeddings → mood heads
-        embeddings_effnet = embedding_model_effnet(audio)
+        embeddings_effnet = embedding_model_effnet(audio_16k)
 
         # MusiCNN embeddings → DEAM only
-        embeddings_musicnn = embedding_model_musicnn(audio)
+        embeddings_musicnn = embedding_model_musicnn(audio_16k)
 
         # Valence / Arousal (MusiCNN path)
         deam_preds = model_deam(embeddings_musicnn)
@@ -142,7 +145,7 @@ for i, row in song_library.iterrows():
         mood_party = float(np.mean(model_party(embeddings_effnet)[:, 1]))
         danceability = float(np.mean(model_dance(embeddings_effnet)[:, 0]))
 
-        bpm = float(bpm_estimator(audio))
+        bpm = float(bpm_estimator(audio_44k))
 
         features_list.append({
             "filename":        row["filename"],
