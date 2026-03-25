@@ -223,6 +223,9 @@ def download_one(
         s = str(err)
         return ("HTTP Error 403" in s) or ("403" in s and "Forbidden" in s)
 
+    def _is_reload_required(err: Exception) -> bool:
+        return "page needs to be reloaded" in str(err).lower()
+
     # Fetch multiple search results so we can try the next if the first has no formats / is blocked
     search_only_opts = {
         "quiet": True,
@@ -290,6 +293,18 @@ def download_one(
             except Exception as e:
                 attempts += 1
                 err_str = str(e)
+
+                if _is_reload_required(e) and attempts <= MAX_403_RETRIES:
+                    backoff = BACKOFF_BASE_S * (2 ** (attempts - 1))
+                    jitter = random.uniform(0, min(10.0, backoff * 0.1))
+                    wait_s = backoff + jitter
+                    print(
+                        f"\r  [{state.current}/{state.total}] {track_name[:50]:<50} "
+                        f"popularity={popularity}  ⚠️  Page reload required (attempt {attempts}/{MAX_403_RETRIES}) — sleeping {wait_s:.0f}s",
+                        flush=True,
+                    )
+                    time.sleep(wait_s)
+                    continue
 
                 if (
                     not format_fallback_used
